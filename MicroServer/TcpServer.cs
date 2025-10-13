@@ -55,7 +55,7 @@ public class TcpServer
     private Socket? _socket;
 
     private Timer? _timer;
-    
+
     public async Task StartAsync()
     {
         _timer = new(x =>
@@ -63,7 +63,7 @@ public class TcpServer
             Log.Information("Enqueued: {enqueued}", _commandsBuffer.Count);
             //Console.WriteLine("enqueued: " + _commandsBuffer.Count);
         }, null, TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(2));
-        
+
         _socket = new Socket(IPAddress.Any.AddressFamily, SocketType.Stream, ProtocolType.IP);
         _socket.Bind(new IPEndPoint(IPAddress.Parse("127.0.0.1"), 40567));
         _socket.Listen();
@@ -73,16 +73,24 @@ public class TcpServer
             var client = await _socket.AcceptAsync();
             var handler = new ConnectionHandler(client);
             handler.OnCommandReceived += OnCommandReceived;
-            
+
             _ = handler.StartClientAsync();
         }
     }
 
     private ConcurrentQueue<string> _commandsBuffer = new();
-    
-    private void OnCommandReceived(string command)
+
+    private void OnCommandReceived(ReadOnlySpan<byte> commandBuffer)
     {
-        _commandsBuffer.Enqueue(command);
+        var (command, key, value) = CommandParser.Parse(commandBuffer);
+        
+        Console.WriteLine(
+            command.ToArray().Aggregate("", (c,n) => c + (char)n) + " : " +
+            key.ToArray().Aggregate("", (c,n) => c + (char)n) + " : " +
+            value.ToArray().Aggregate("", (c,n) => c + (char)n)
+            );
+        
+        _commandsBuffer.Enqueue(commandBuffer.ToString());
     }
 }
 
@@ -95,14 +103,15 @@ internal class ConnectionHandler : IDisposable
         _client = client;
     }
 
-    public Action<string>? OnCommandReceived { get; set; }
-    
+    public Action<ReadOnlySpan<byte>>? OnCommandReceived { get; set; }
+    public Action? OnCommandBufferOverflow { get; set; }
+
     public async Task StartClientAsync()
     {
         try
         {
-            var command = ArrayPool<byte>.Shared.Rent(1024*1024);
-            var commandPos = 0;
+            var command = ArrayPool<byte>.Shared.Rent(1024 * 1024);
+            var writeHead = 0;
             while (true)
             {
                 var buffer = ArrayPool<byte>.Shared.Rent(1024);
@@ -120,45 +129,63 @@ internal class ConnectionHandler : IDisposable
                     break;
                 }
 
-                var idx = Array.FindIndex(buffer, 0, x => x == 0x0A);
-                if (idx >= 0)
+                var separatorIndex = Array.FindIndex(buffer, 0, x => x == 0x0A);
+                if (separatorIndex >= 0)
                 {
-                    var start = 0;
+                    var commandStart = 0;
                     do
                     {
-                        Buffer.BlockCopy(buffer, start, command, commandPos, idx - start);
+                        Buffer.BlockCopy(buffer, commandStart, command, writeHead, separatorIndex - commandStart);
 
-                        try
+                        if (writeHead + separatorIndex > command.Length)
                         {
-                            OnCommandReceived?.Invoke(Encoding.UTF8.GetString(command, 0, commandPos + idx));
+                            Log.Error("Захлебнулся данными (1)");
+                            OnCommandBufferOverflow?.Invoke();
+                            
+                            //TODO: аварийно очистить буфер и продолжить 
                         }
-                        catch (Exception ex)
+                        else
                         {
-                            Log.Error(ex.Message);
-                            Log.Error("commandPos: {commandPos}\nidx: {idx}\ncommand: {command}", 
-                                commandPos, 
-                                idx, 
-                                command.Aggregate("", (c,n) => c + (char)n));
-                        }
+                            try
+                            {
+                                //OnCommandReceived?.Invoke(Encoding.UTF8.GetString(command, 0,
+                                //     writeHead + separatorIndex));
+                                
+                                OnCommandReceived?.Invoke(command.AsSpan().Slice(0, writeHead + separatorIndex));
+                            }
+                            catch (Exception ex)
+                            {
+                                Log.Error(ex, "Error enqueue command: {msg}", ex.Message);
+                                Log.Error("commandPos: {commandPos}\nidx: {idx}\ncommand: {command}",
+                                    writeHead,
+                                    separatorIndex,
+                                    command.Aggregate("", (c, n) => c + (char)n));
+                            }
 
-                        Array.Clear(command);
-                        start = idx + 1;
-                        idx = Array.FindIndex(buffer, start, x => x == 0x0A);
-                        
-                    } while (idx >= 0 && idx < gotBytes && start < gotBytes);
-                    
-                    if (gotBytes - start > 0) // tail present
+                            Array.Clear(command);
+                            commandStart = separatorIndex + 1;
+                            separatorIndex = Array.FindIndex(buffer, commandStart, x => x == 0x0A);
+                        }
+                    } while (separatorIndex >= 0 && separatorIndex < gotBytes && commandStart < gotBytes);
+
+                    if (gotBytes - commandStart > 0)
                     {
-                        Buffer.BlockCopy(buffer, start, command, 0, gotBytes - start);
-                        commandPos = gotBytes - start;
+                        Buffer.BlockCopy(buffer, commandStart, command, 0, gotBytes - commandStart);
+                        writeHead = gotBytes - commandStart;
                     }
 
                     Array.Clear(buffer);
                 }
                 else
                 {
-                    Buffer.BlockCopy(buffer, 0, command, commandPos, gotBytes);
-                    commandPos += gotBytes;
+                    if (writeHead + gotBytes > command.Length)
+                    {
+                        Log.Error("Захлебнулся данными (2)");
+                        OnCommandBufferOverflow?.Invoke();
+                    }
+                    
+                    Buffer.BlockCopy(buffer, 0, command, writeHead, gotBytes);
+                    writeHead += gotBytes;
                 }
 
                 ArrayPool<byte>.Shared.Return(buffer);

@@ -4,6 +4,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MicroServer", "MicroServer\
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MicroServer.TestClient", "MicroServer.TestClient\MicroServer.TestClient.csproj", "{CA697AC7-B5FD-47B8-97C1-9C617F3C1C7E}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MicroServer.Tests", "MicroServer.Tests\MicroServer.Tests.csproj", "{0C0D59AB-F594-4FCA-8495-598AA7486F34}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -18,5 +20,9 @@ Global
 		{CA697AC7-B5FD-47B8-97C1-9C617F3C1C7E}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{CA697AC7-B5FD-47B8-97C1-9C617F3C1C7E}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{CA697AC7-B5FD-47B8-97C1-9C617F3C1C7E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{0C0D59AB-F594-4FCA-8495-598AA7486F34}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0C0D59AB-F594-4FCA-8495-598AA7486F34}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0C0D59AB-F594-4FCA-8495-598AA7486F34}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0C0D59AB-F594-4FCA-8495-598AA7486F34}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal
