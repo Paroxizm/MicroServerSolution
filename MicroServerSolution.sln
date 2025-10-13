@@ -1,0 +1,22 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MicroServer", "MicroServer\MicroServer.csproj", "{DFB95C17-BF43-443B-988F-DAF0138D4B9B}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MicroServer.TestClient", "MicroServer.TestClient\MicroServer.TestClient.csproj", "{CA697AC7-B5FD-47B8-97C1-9C617F3C1C7E}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{DFB95C17-BF43-443B-988F-DAF0138D4B9B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{DFB95C17-BF43-443B-988F-DAF0138D4B9B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{DFB95C17-BF43-443B-988F-DAF0138D4B9B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{DFB95C17-BF43-443B-988F-DAF0138D4B9B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{CA697AC7-B5FD-47B8-97C1-9C617F3C1C7E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CA697AC7-B5FD-47B8-97C1-9C617F3C1C7E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CA697AC7-B5FD-47B8-97C1-9C617F3C1C7E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CA697AC7-B5FD-47B8-97C1-9C617F3C1C7E}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
