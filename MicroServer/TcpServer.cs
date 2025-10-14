@@ -58,11 +58,10 @@ public class TcpServer
 
     public async Task StartAsync()
     {
-        _timer = new(x =>
-        {
-            Log.Information("Enqueued: {enqueued}", _commandsBuffer.Count);
-            //Console.WriteLine("enqueued: " + _commandsBuffer.Count);
-        }, null, TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(2));
+        // _timer = new(x =>
+        // {
+        //     Log.Information("Enqueued: {enqueued}", _commandsBuffer.Count);
+        // }, null, TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(2));
 
         _socket = new Socket(IPAddress.Any.AddressFamily, SocketType.Stream, ProtocolType.IP);
         _socket.Bind(new IPEndPoint(IPAddress.Parse("127.0.0.1"), 40567));
@@ -83,13 +82,13 @@ public class TcpServer
     private void OnCommandReceived(ReadOnlySpan<byte> commandBuffer)
     {
         var (command, key, value) = CommandParser.Parse(commandBuffer);
-        
+
         Console.WriteLine(
-            command.ToArray().Aggregate("", (c,n) => c + (char)n) + " : " +
-            key.ToArray().Aggregate("", (c,n) => c + (char)n) + " : " +
-            value.ToArray().Aggregate("", (c,n) => c + (char)n)
-            );
-        
+            command.ToArray().Aggregate("", (c, n) => c + (char)n) + " : " +
+            key.ToArray().Aggregate("", (c, n) => c + (char)n) + " : " +
+            value.ToArray().Aggregate("", (c, n) => c + (char)n)
+        );
+
         _commandsBuffer.Enqueue(commandBuffer.ToString());
     }
 }
@@ -129,64 +128,76 @@ internal class ConnectionHandler : IDisposable
                     break;
                 }
 
-                var separatorIndex = Array.FindIndex(buffer, 0, x => x == 0x0A);
-                if (separatorIndex >= 0)
+                var tail = ProcessBuffer(buffer.AsSpan().Slice(0, gotBytes));
+
+                if (!tail.IsEmpty)
                 {
-                    var commandStart = 0;
-                    do
-                    {
-                        Buffer.BlockCopy(buffer, commandStart, command, writeHead, separatorIndex - commandStart);
-
-                        if (writeHead + separatorIndex > command.Length)
-                        {
-                            Log.Error("Захлебнулся данными (1)");
-                            OnCommandBufferOverflow?.Invoke();
-                            
-                            //TODO: аварийно очистить буфер и продолжить 
-                        }
-                        else
-                        {
-                            try
-                            {
-                                //OnCommandReceived?.Invoke(Encoding.UTF8.GetString(command, 0,
-                                //     writeHead + separatorIndex));
-                                
-                                OnCommandReceived?.Invoke(command.AsSpan().Slice(0, writeHead + separatorIndex));
-                            }
-                            catch (Exception ex)
-                            {
-                                Log.Error(ex, "Error enqueue command: {msg}", ex.Message);
-                                Log.Error("commandPos: {commandPos}\nidx: {idx}\ncommand: {command}",
-                                    writeHead,
-                                    separatorIndex,
-                                    command.Aggregate("", (c, n) => c + (char)n));
-                            }
-
-                            Array.Clear(command);
-                            commandStart = separatorIndex + 1;
-                            separatorIndex = Array.FindIndex(buffer, commandStart, x => x == 0x0A);
-                        }
-                    } while (separatorIndex >= 0 && separatorIndex < gotBytes && commandStart < gotBytes);
-
-                    if (gotBytes - commandStart > 0)
-                    {
-                        Buffer.BlockCopy(buffer, commandStart, command, 0, gotBytes - commandStart);
-                        writeHead = gotBytes - commandStart;
-                    }
-
-                    Array.Clear(buffer);
+                    Log.Warning("Tail: {tail}", tail.Length);
+                    tail.CopyTo(command.AsSpan().Slice(writeHead));
+                    writeHead += tail.Length;
                 }
-                else
-                {
-                    if (writeHead + gotBytes > command.Length)
-                    {
-                        Log.Error("Захлебнулся данными (2)");
-                        OnCommandBufferOverflow?.Invoke();
-                    }
-                    
-                    Buffer.BlockCopy(buffer, 0, command, writeHead, gotBytes);
-                    writeHead += gotBytes;
-                }
+
+                //buffer.AsSpan().CopyTo();
+
+                // var separatorIndex = Array.FindIndex(buffer, 0, x => x == 0x0A);
+                // if (separatorIndex >= 0)
+                // {
+                //     var commandStart = 0;
+                //     do
+                //     {
+                //         //Buffer.Memmove()
+                //         Buffer.BlockCopy(buffer, commandStart, command, writeHead, separatorIndex - commandStart);
+                //
+                //         if (writeHead + separatorIndex > command.Length)
+                //         {
+                //             Log.Error("Захлебнулся данными (1)");
+                //             OnCommandBufferOverflow?.Invoke();
+                //
+                //             //TODO: аварийно очистить буфер и продолжить 
+                //         }
+                //         else
+                //         {
+                //             try
+                //             {
+                //                 //OnCommandReceived?.Invoke(Encoding.UTF8.GetString(command, 0,
+                //                 //     writeHead + separatorIndex));
+                //
+                //                 OnCommandReceived?.Invoke(command.AsSpan().Slice(0, writeHead + separatorIndex));
+                //             }
+                //             catch (Exception ex)
+                //             {
+                //                 Log.Error(ex, "Error enqueue command: {msg}", ex.Message);
+                //                 Log.Error("commandPos: {commandPos}\nidx: {idx}\ncommand: {command}",
+                //                     writeHead,
+                //                     separatorIndex,
+                //                     command.Aggregate("", (c, n) => c + (char)n));
+                //             }
+                //
+                //             Array.Clear(command);
+                //             commandStart = separatorIndex + 1;
+                //             separatorIndex = Array.FindIndex(buffer, commandStart, x => x == 0x0A);
+                //         }
+                //     } while (separatorIndex >= 0 && separatorIndex < gotBytes && commandStart < gotBytes);
+                //
+                //     if (gotBytes - commandStart > 0)
+                //     {
+                //         Buffer.BlockCopy(buffer, commandStart, command, 0, gotBytes - commandStart);
+                //         writeHead = gotBytes - commandStart;
+                //     }
+                //
+                //     Array.Clear(buffer);
+                // }
+                // else
+                // {
+                //     if (writeHead + gotBytes > command.Length)
+                //     {
+                //         Log.Error("Захлебнулся данными (2)");
+                //         OnCommandBufferOverflow?.Invoke();
+                //     }
+                //
+                //     Buffer.BlockCopy(buffer, 0, command, writeHead, gotBytes);
+                //     writeHead += gotBytes;
+                // }
 
                 ArrayPool<byte>.Shared.Return(buffer);
             }
@@ -203,6 +214,101 @@ internal class ConnectionHandler : IDisposable
             _client.Close();
             _client.Dispose();
         }
+    }
+
+
+    private Span<byte> ProcessBuffer(Span<byte> buffer)
+    {
+        var delimiter = (byte)0x0A;
+        
+        var separatorIndex = buffer.IndexOf(delimiter);
+        if (separatorIndex < 0)
+        {
+            return buffer;
+            // if (writeHead + buffer.Length > storage.Length)
+            // {
+            //     Log.Error("Захлебнулся данными (2)");
+            //     OnCommandBufferOverflow?.Invoke();
+            // }
+            //
+            // buffer.CopyTo(storage.Slice(writeHead, buffer.Length - writeHead));
+            // writeHead += buffer.Length;
+            // return Span<byte>.Empty;
+        }
+
+        //var processedData = 0;
+        var commandSlice = buffer.Slice(0, separatorIndex);
+        while(!commandSlice.IsEmpty)
+        {
+            Console.WriteLine(commandSlice.ToArray().Aggregate("", (c, n) => c + (char)n));
+            
+            //processedData += commandSlice.Length;
+            
+            buffer = buffer.Slice(Math.Min(separatorIndex + 1, buffer.Length));
+            if (buffer.IsEmpty)
+                break;
+            
+            separatorIndex = buffer.IndexOf(delimiter);
+            commandSlice = buffer.Slice(0, Math.Min(separatorIndex, buffer.Length));
+        }
+
+        if (buffer.Length > 0)
+        {
+            // save tail to storage
+            Console.WriteLine("Save tail");
+            return buffer;
+        }
+
+        
+        return Span<byte>.Empty;
+
+        // var commandStart = 0;
+        // do
+        // {
+        //     var commandLength = separatorIndex - commandStart;
+        //     
+        //     buffer.Slice(commandStart, commandLength)
+        //         .CopyTo(command.Slice(writeHead, commandLength));
+        //         
+        //     if (writeHead + separatorIndex > command.Length)
+        //     {
+        //         Log.Error("Захлебнулся данными (1)");
+        //         OnCommandBufferOverflow?.Invoke();
+        //
+        //         //TODO: аварийно очистить буфер и продолжить 
+        //     }
+        //     else
+        //     {
+        //         try
+        //         {
+        //             //OnCommandReceived?.Invoke(Encoding.UTF8.GetString(command, 0,
+        //             //     writeHead + separatorIndex));
+        //
+        //             OnCommandReceived?.Invoke(command.Slice(0, writeHead + separatorIndex));
+        //         }
+        //         catch (Exception ex)
+        //         {
+        //             Log.Error(ex, "Error enqueue command: {msg}", ex.Message);
+        //             Log.Error("commandPos: {commandPos}\nidx: {idx}\ncommand: {command}",
+        //                 writeHead,
+        //                 separatorIndex,
+        //                 command.ToArray().Aggregate("", (c, n) => c + (char)n));
+        //         }
+        //
+        //         //Array.Clear(command);
+        //         command.Clear();
+        //         
+        //         commandStart = separatorIndex + 1;
+        //         buffer = buffer.Slice(commandStart);
+        //         separatorIndex = buffer.IndexOf(delimiter);
+        //     }
+        // } while (separatorIndex >= 0 && separatorIndex < gotBytes && commandStart < gotBytes);
+        //
+        // if (gotBytes - commandStart > 0)
+        // {
+        //     Buffer.BlockCopy(buffer, commandStart, command, 0, gotBytes - commandStart);
+        //     writeHead = gotBytes - commandStart;
+        // }
     }
 
     /// <inheritdoc />

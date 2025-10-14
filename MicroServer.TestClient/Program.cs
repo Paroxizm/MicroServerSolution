@@ -3,16 +3,30 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 
-var step = 5;
+var step = 2;
+
+var timeout = int.Parse(args.FirstOrDefault(x => x.StartsWith("--timeout"))?.Split('=')[1] ?? "5000");
+
+var address = args.FirstOrDefault(x => x.StartsWith("--address"))?.Split('=')[1] ?? "127.0.0.1";
+var port = int.Parse(args.FirstOrDefault(x => x.StartsWith("--port"))?.Split('=')[1] ?? "40567");
+
+Console.WriteLine($"TestClient started with:");
+Console.WriteLine($" - timeout: [{timeout}]");
+Console.WriteLine($" - address: [{address}]");
+Console.WriteLine($" - port: [{port}]");
 
 while (true)
 {
     try
     {
-        var socket = new Socket(IPAddress.Loopback.AddressFamily, SocketType.Stream, ProtocolType.IP);
+        Console.WriteLine("Connecting...");
+        var ipAddress = IPAddress.Parse(address); 
+        var socket = new Socket(ipAddress.AddressFamily, SocketType.Stream, ProtocolType.IP);
 
-        await socket.ConnectAsync([IPAddress.Loopback], 40567);
-
+        await socket.ConnectAsync([ipAddress], port);
+        
+        Console.WriteLine("Connected");
+        
         var commandBuffer = ArrayPool<byte>.Shared.Rent(1024); 
         while (true)
         {
@@ -22,9 +36,9 @@ while (true)
 
                 await socket.SendAsync(commandBuffer.AsMemory(0, commandLength), SocketFlags.None);
                
-                Console.WriteLine($"{step} - sent {commandLength} bytes");
+                Console.WriteLine($"{step:00000} - sent {commandLength} bytes");
                 
-                await Task.Delay(500);
+                await Task.Delay(timeout);
             }
             catch (Exception e)
             {
@@ -39,9 +53,10 @@ while (true)
     }
     catch (Exception e)
     {
-        Console.WriteLine(e);
+        Console.WriteLine(e.Message);
         Console.WriteLine("Wait 5 seconds");
-        await Task.Delay(5000);
+        Console.WriteLine("  ------");
+        await Task.Delay(Math.Max(timeout * 3, 5000));
     }
 }
 
