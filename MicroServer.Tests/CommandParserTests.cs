@@ -111,7 +111,7 @@ public abstract class CommandSamples : IEnumerable<object[]>
         ["GET"],
         ["GET "],
         ["SET"],
-        ["SET "],
+        ["SET "]
     ];
 
     internal static readonly List<string[]> MultiSpacedCommands =
@@ -128,7 +128,7 @@ public abstract class CommandSamples : IEnumerable<object[]>
     public IEnumerator<object[]> GetEnumerator()
         => CommandSet
             .Select(x =>
-                x.Select(b => (object)Encoding.UTF8.GetBytes(b)).ToArray())
+                x.Select(object (b) => Encoding.UTF8.GetBytes(b)).ToArray())
             .GetEnumerator();
 
 

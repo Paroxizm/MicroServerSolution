@@ -6,6 +6,19 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MicroServer.TestClient", "M
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MicroServer.Tests", "MicroServer.Tests\MicroServer.Tests.csproj", "{0C0D59AB-F594-4FCA-8495-598AA7486F34}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Runs", "Runs", "{748CFCB5-53F1-4B3D-9B37-E933D63DF886}"
+	ProjectSection(SolutionItems) = preProject
+		stop-all.ps1 = stop-all.ps1
+		stop-server.ps1 = stop-server.ps1
+		_Elevate.ps1 = _Elevate.ps1
+		stop-clients.ps1 = stop-clients.ps1
+		run-single-fast.ps1 = run-single-fast.ps1
+		run-multiple-slow.ps1 = run-multiple-slow.ps1
+		_Start-Apps.ps1 = _Start-Apps.ps1
+		run-single-slow.ps1 = run-single-slow.ps1
+		run-multiple-fast.ps1 = run-multiple-fast.ps1
+	EndProjectSection
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU

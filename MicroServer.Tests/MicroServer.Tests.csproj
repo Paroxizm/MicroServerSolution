@@ -21,7 +21,6 @@
 
     <ItemGroup>
       <ProjectReference Include="..\MicroServer\MicroServer.csproj" />
-      <ProjectReference Include="..\Unit3\Unit3.csproj" />
     </ItemGroup>
 
 </Project>

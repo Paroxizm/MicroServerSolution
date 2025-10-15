@@ -1,322 +1,95 @@
-﻿using System.Buffers;
-using System.Collections.Concurrent;
-using System.Net;
+﻿using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using Serilog;
 
 namespace MicroServer;
 
-/*
-
-Описание/Пошаговая инструкция выполнения домашнего задания:
-Пункт 1. Создание класса TCP-сервера
-Создайте класс TcpServer. В нем реализуйте метод StartAsync, который будет инициализировать Socket,
-связывать его с локальным IP-адресом и портом (например, 127.0.0.1:8080)
-и переводить в режим прослушивания (Listen).
-
-Пункт 2. Реализация цикла приема подключений
-В методе StartAsync после вызова Listen организуйте бесконечный асинхронный цикл (while(true)),
-который ожидает новые подключения с помощью await serverSocket.AcceptAsync(). Для каждого принятого
-клиентского сокета запускайте отдельную задачу для его обработки
-(например, _ = ProcessClientAsync(clientSocket)).
-
-Пункт 3. Чтение данных от клиента и парсинг
-Реализуйте приватный асинхронный метод ProcessClientAsync(Socket clientSocket).
-Внутри него организуйте цикл для чтения данных.
-При чтении (await clientSocket.ReceiveAsync(...)) используйте буфер,
-арендованный из ArrayPool.Shared. Полученные данные передавайте в статический метод CommandParser.Parse
-из ДЗ №1. Результат парсинга (команду, ключ, значение) выводите в консоль.
-Не забудьте возвращать буфер в пул после использования.
-
-Пункт 4. Обработка отключения клиента
-Модифицируйте цикл чтения данных в ProcessClientAsync.
-Если вызов ReceiveAsync возвращает 0, это означает, что клиент закрыл соединение.
-В этом случае необходимо прервать цикл, корректно закрыть сокет клиента (Shutdown, Close, Dispose)
-и завершить задачу обработки.
-
-Пункт 5. Запуск сервера
-В Program.cs создайте экземпляр вашего TcpServer,
-вызовите его метод StartAsync и обеспечьте работу приложения в фоновом режиме,
-чтобы оно не завершилось сразу после запуска (например, с помощью Console.ReadLine()).
-
-
-
-
- */
-
-public class TcpServer
+public class TcpServer(string address, int port)
 {
-    //private TcpListener? _listener;
-
-    //private Thread? _thread;
-
-
+    // stub for storage
+    private int _gotCommands;
+    
     private Socket? _socket;
 
-    private Timer? _timer;
-
-    public async Task StartAsync()
+    private readonly HandlersList _handlers = new();
+   
+    
+    public async Task StartAsync(CancellationToken cancellationToken)
     {
-        // _timer = new(x =>
-        // {
-        //     Log.Information("Enqueued: {enqueued}", _commandsBuffer.Count);
-        // }, null, TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(2));
+        var timer = new Timer(TimerCallback, _handlers, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5));
 
         _socket = new Socket(IPAddress.Any.AddressFamily, SocketType.Stream, ProtocolType.IP);
-        _socket.Bind(new IPEndPoint(IPAddress.Parse("127.0.0.1"), 40567));
+        _socket.Bind(new IPEndPoint(IPAddress.Parse(address), port));
         _socket.Listen();
 
-        while (true)
-        {
-            var client = await _socket.AcceptAsync();
-            var handler = new ConnectionHandler(client);
-            handler.OnCommandReceived += OnCommandReceived;
-
-            _ = handler.StartClientAsync();
-        }
-    }
-
-    private ConcurrentQueue<string> _commandsBuffer = new();
-
-    private void OnCommandReceived(ReadOnlySpan<byte> commandBuffer)
-    {
-        var (command, key, value) = CommandParser.Parse(commandBuffer);
-
-        Console.WriteLine(
-            command.ToArray().Aggregate("", (c, n) => c + (char)n) + " : " +
-            key.ToArray().Aggregate("", (c, n) => c + (char)n) + " : " +
-            value.ToArray().Aggregate("", (c, n) => c + (char)n)
-        );
-
-        _commandsBuffer.Enqueue(commandBuffer.ToString());
-    }
-}
-
-internal class ConnectionHandler : IDisposable
-{
-    private readonly Socket _client;
-
-    public ConnectionHandler(Socket client)
-    {
-        _client = client;
-    }
-
-    public Action<ReadOnlySpan<byte>>? OnCommandReceived { get; set; }
-    public Action? OnCommandBufferOverflow { get; set; }
-
-    public async Task StartClientAsync()
-    {
         try
         {
-            var command = ArrayPool<byte>.Shared.Rent(1024 * 1024);
-            var writeHead = 0;
-            while (true)
+            while (!cancellationToken.IsCancellationRequested)
             {
-                var buffer = ArrayPool<byte>.Shared.Rent(1024);
-                Array.Clear(buffer, 0, buffer.Length);
-
-                var gotBytes = await _client.ReceiveAsync(buffer);
-
-                if (gotBytes == 0)
-                {
-                    Log.Warning("Client disconnected");
-                    _client.Shutdown(SocketShutdown.Both);
-                    _client.Close();
-                    _client.Dispose();
-
-                    break;
-                }
-
-                var tail = ProcessBuffer(buffer.AsSpan().Slice(0, gotBytes));
-
-                if (!tail.IsEmpty)
-                {
-                    Log.Warning("Tail: {tail}", tail.Length);
-                    tail.CopyTo(command.AsSpan().Slice(writeHead));
-                    writeHead += tail.Length;
-                }
-
-                //buffer.AsSpan().CopyTo();
-
-                // var separatorIndex = Array.FindIndex(buffer, 0, x => x == 0x0A);
-                // if (separatorIndex >= 0)
-                // {
-                //     var commandStart = 0;
-                //     do
-                //     {
-                //         //Buffer.Memmove()
-                //         Buffer.BlockCopy(buffer, commandStart, command, writeHead, separatorIndex - commandStart);
-                //
-                //         if (writeHead + separatorIndex > command.Length)
-                //         {
-                //             Log.Error("Захлебнулся данными (1)");
-                //             OnCommandBufferOverflow?.Invoke();
-                //
-                //             //TODO: аварийно очистить буфер и продолжить 
-                //         }
-                //         else
-                //         {
-                //             try
-                //             {
-                //                 //OnCommandReceived?.Invoke(Encoding.UTF8.GetString(command, 0,
-                //                 //     writeHead + separatorIndex));
-                //
-                //                 OnCommandReceived?.Invoke(command.AsSpan().Slice(0, writeHead + separatorIndex));
-                //             }
-                //             catch (Exception ex)
-                //             {
-                //                 Log.Error(ex, "Error enqueue command: {msg}", ex.Message);
-                //                 Log.Error("commandPos: {commandPos}\nidx: {idx}\ncommand: {command}",
-                //                     writeHead,
-                //                     separatorIndex,
-                //                     command.Aggregate("", (c, n) => c + (char)n));
-                //             }
-                //
-                //             Array.Clear(command);
-                //             commandStart = separatorIndex + 1;
-                //             separatorIndex = Array.FindIndex(buffer, commandStart, x => x == 0x0A);
-                //         }
-                //     } while (separatorIndex >= 0 && separatorIndex < gotBytes && commandStart < gotBytes);
-                //
-                //     if (gotBytes - commandStart > 0)
-                //     {
-                //         Buffer.BlockCopy(buffer, commandStart, command, 0, gotBytes - commandStart);
-                //         writeHead = gotBytes - commandStart;
-                //     }
-                //
-                //     Array.Clear(buffer);
-                // }
-                // else
-                // {
-                //     if (writeHead + gotBytes > command.Length)
-                //     {
-                //         Log.Error("Захлебнулся данными (2)");
-                //         OnCommandBufferOverflow?.Invoke();
-                //     }
-                //
-                //     Buffer.BlockCopy(buffer, 0, command, writeHead, gotBytes);
-                //     writeHead += gotBytes;
-                // }
-
-                ArrayPool<byte>.Shared.Return(buffer);
+                var client = await _socket.AcceptAsync(cancellationToken);
+                var handler = new ClientSocketHandler(client);
+                handler.OnCommandReceived += OnCommandReceived;
+                _handlers.AddHandler(handler);
+                _ = handler.StartClientAsync(cancellationToken);
+                
+                Log.Information("Client [{client}] connected", client.RemoteEndPoint?.ToString() ??  "(null)");
             }
-
-            ArrayPool<byte>.Shared.Return(command);
-        }
-        catch (Exception e)
-        {
-            Log.Error(e, "Error while processing client: {msg}", e.Message);
         }
         finally
         {
-            _client.Shutdown(SocketShutdown.Both);
-            _client.Close();
-            _client.Dispose();
+            _socket.Shutdown(SocketShutdown.Both);
+            _socket.Close();
+            _socket.Dispose();
+            
+            await timer.DisposeAsync();
+            _handlers.Dispose();
+        }
+    }
+ 
+    /// <summary>
+    /// Отображение статистики и чистка данных о неактивных клиентах
+    /// </summary>
+    /// <param name="state"></param>
+    private void TimerCallback(object? state)
+    {
+        if(state is not HandlersList handlers)
+            return;
+            
+        // очистка отключенных соединений
+        var purged = handlers.Purge();
+        if(purged > 0)
+            Log.Debug("Purged handlers: [{purged}]", purged);
+
+        var connections = handlers.Snapshot();
+        
+        // вывод статистики соединений
+        Log.Information("Got commands: {enqueued}", _gotCommands);
+        Log.Debug("Actual handlers: [{cnt}]", connections.Count);
+            
+        foreach (var handler in connections)
+        {
+            Log.Debug(
+                " > {state} [{endpoint}] reads: {reads:0000}, commands: {commands:0000}, received: {received:### ### ##0}",
+                handler.IsAlive ? "[ ]" : "[x]",
+                handler.ClientName,
+                handler.ReadsCount, handler.CommandsCount, handler.ReadTotal);
         }
     }
 
-
-    private Span<byte> ProcessBuffer(Span<byte> buffer)
+    /// <summary>
+    /// Фиксация данных, полученных от клиентов
+    /// </summary>
+    /// <param name="commandBuffer">Буфер с единичной командой</param>
+    private void OnCommandReceived(ReadOnlySpan<byte> commandBuffer)
     {
-        var delimiter = (byte)0x0A;
+        var (command, key, value) = CommandParser.Parse(commandBuffer);
+        Interlocked.Increment(ref _gotCommands);
         
-        var separatorIndex = buffer.IndexOf(delimiter);
-        if (separatorIndex < 0)
-        {
-            return buffer;
-            // if (writeHead + buffer.Length > storage.Length)
-            // {
-            //     Log.Error("Захлебнулся данными (2)");
-            //     OnCommandBufferOverflow?.Invoke();
-            // }
-            //
-            // buffer.CopyTo(storage.Slice(writeHead, buffer.Length - writeHead));
-            // writeHead += buffer.Length;
-            // return Span<byte>.Empty;
-        }
-
-        //var processedData = 0;
-        var commandSlice = buffer.Slice(0, separatorIndex);
-        while(!commandSlice.IsEmpty)
-        {
-            Console.WriteLine(commandSlice.ToArray().Aggregate("", (c, n) => c + (char)n));
-            
-            //processedData += commandSlice.Length;
-            
-            buffer = buffer.Slice(Math.Min(separatorIndex + 1, buffer.Length));
-            if (buffer.IsEmpty)
-                break;
-            
-            separatorIndex = buffer.IndexOf(delimiter);
-            commandSlice = buffer.Slice(0, Math.Min(separatorIndex, buffer.Length));
-        }
-
-        if (buffer.Length > 0)
-        {
-            // save tail to storage
-            Console.WriteLine("Save tail");
-            return buffer;
-        }
-
-        
-        return Span<byte>.Empty;
-
-        // var commandStart = 0;
-        // do
-        // {
-        //     var commandLength = separatorIndex - commandStart;
-        //     
-        //     buffer.Slice(commandStart, commandLength)
-        //         .CopyTo(command.Slice(writeHead, commandLength));
-        //         
-        //     if (writeHead + separatorIndex > command.Length)
-        //     {
-        //         Log.Error("Захлебнулся данными (1)");
-        //         OnCommandBufferOverflow?.Invoke();
-        //
-        //         //TODO: аварийно очистить буфер и продолжить 
-        //     }
-        //     else
-        //     {
-        //         try
-        //         {
-        //             //OnCommandReceived?.Invoke(Encoding.UTF8.GetString(command, 0,
-        //             //     writeHead + separatorIndex));
-        //
-        //             OnCommandReceived?.Invoke(command.Slice(0, writeHead + separatorIndex));
-        //         }
-        //         catch (Exception ex)
-        //         {
-        //             Log.Error(ex, "Error enqueue command: {msg}", ex.Message);
-        //             Log.Error("commandPos: {commandPos}\nidx: {idx}\ncommand: {command}",
-        //                 writeHead,
-        //                 separatorIndex,
-        //                 command.ToArray().Aggregate("", (c, n) => c + (char)n));
-        //         }
-        //
-        //         //Array.Clear(command);
-        //         command.Clear();
-        //         
-        //         commandStart = separatorIndex + 1;
-        //         buffer = buffer.Slice(commandStart);
-        //         separatorIndex = buffer.IndexOf(delimiter);
-        //     }
-        // } while (separatorIndex >= 0 && separatorIndex < gotBytes && commandStart < gotBytes);
-        //
-        // if (gotBytes - commandStart > 0)
-        // {
-        //     Buffer.BlockCopy(buffer, commandStart, command, 0, gotBytes - commandStart);
-        //     writeHead = gotBytes - commandStart;
-        // }
-    }
-
-    /// <inheritdoc />
-    public void Dispose()
-    {
-        OnCommandReceived = null;
-        _client.Shutdown(SocketShutdown.Both);
-        _client.Close();
-        _client.Dispose();
+        Log.Debug("{cmd} : {key} : {value}",
+            Encoding.UTF8.GetString(command),
+            Encoding.UTF8.GetString(key),
+            Encoding.UTF8.GetString(value)
+        );
     }
 }
