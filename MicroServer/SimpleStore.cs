@@ -1,9 +1,16 @@
 ﻿namespace MicroServer;
 
-public class SimpleStore
+public class SimpleStore : IDisposable
 {
+    private readonly ReaderWriterLockSlim _lock = new();
     private readonly Dictionary<string, byte[]> _storage = [];
-    
+
+    private int _setCount;
+    private int _getCount;
+    private int _deleteCount;
+
+    public (int, int, int) GetStatistic() => (_getCount, _setCount, _deleteCount);
+
     /// <summary>
     /// Добавляет или обновляет значение по ключу
     /// </summary>
@@ -11,7 +18,16 @@ public class SimpleStore
     /// <param name="value"></param>
     public void Set(string key, byte[] value)
     {
-        _storage[key] = value;
+        _lock.EnterWriteLock();
+        try
+        {
+            _storage[key] = value;
+            Interlocked.Increment(ref _setCount);
+        }
+        finally
+        {
+            _lock.ExitWriteLock();
+        }
     }
 
     /// <summary>
@@ -22,7 +38,17 @@ public class SimpleStore
     /// <exception cref="NotImplementedException"></exception>
     public byte[]? Get(string key)
     {
-        return _storage.GetValueOrDefault(key);
+        _lock.EnterReadLock();
+        try
+        {
+            var value = _storage.GetValueOrDefault(key);
+            Interlocked.Increment(ref _getCount);
+            return value;
+        }
+        finally
+        {
+            _lock.ExitReadLock();
+        }
     }
 
     /// <summary>
@@ -31,6 +57,41 @@ public class SimpleStore
     /// <param name="key"></param>
     public void Delete(string key)
     {
-        _storage.Remove(key);
+        _lock.EnterWriteLock();
+        try
+        {
+            _storage.Remove(key);
+            Interlocked.Increment(ref _deleteCount);
+        }
+        finally
+        {
+            _lock.ExitWriteLock();
+        }
+    }
+
+    #if DEBUG
+    public IReadOnlyDictionary<string, byte[]> GetAll()
+    {
+        _lock.EnterReadLock();
+        try
+        {
+            return _storage
+                .Select(x => x)
+                .ToDictionary(
+                    x => x.Key, 
+                    x => (byte[])x.Value.Clone());
+            
+        }
+        finally
+        {
+            _lock.ExitReadLock();
+        }
+    }
+    #endif
+
+    /// <inheritdoc />
+    public void Dispose()
+    {
+        _lock.Dispose();
     }
 }
