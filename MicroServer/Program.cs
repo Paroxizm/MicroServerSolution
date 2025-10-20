@@ -16,11 +16,12 @@ Log.Information("Server starting with:");
 Log.Information(" - address: [{address}]", address);
 Log.Information(" - port: [{port}]", port);
 
+var storage = new SimpleStore();
 
 var tokenSource = new CancellationTokenSource();
 try
 {
-    var listener = new TcpServer(address, port);
+    var listener = new TcpServer(storage, address, port);
     await listener.StartAsync(tokenSource.Token);
 
     Log.Information("MicroServer is started");

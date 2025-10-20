@@ -5,7 +5,7 @@ using Serilog;
 
 namespace MicroServer;
 
-public class TcpServer(string address, int port)
+public class TcpServer(SimpleStore storage, string address, int port)
 {
     // stub for storage
     private int _gotCommands;
@@ -28,8 +28,8 @@ public class TcpServer(string address, int port)
             while (!cancellationToken.IsCancellationRequested)
             {
                 var client = await _socket.AcceptAsync(cancellationToken);
-                var handler = new ClientSocketHandler(client);
-                handler.OnCommandReceived += OnCommandReceived;
+                var handler = new ClientSocketHandler(client, OnCommandReceived);
+                //handler.OnCommandReceived += ;
                 _handlers.AddHandler(handler);
                 _ = handler.StartClientAsync(cancellationToken);
                 
@@ -77,19 +77,47 @@ public class TcpServer(string address, int port)
         }
     }
 
+    private static readonly byte[] EmptyAnswer = "(nil)\n\r"u8.ToArray();
+    private static readonly byte[] OkAnswer = "OK\n\r"u8.ToArray();
+    private static readonly byte[] NotSupportedCommandAnswer = "-ERRCommandNotSupported\n\r"u8.ToArray();
+    private static readonly byte[] BadFormatAnswer = "-ERRBadCommandFormat\n\r"u8.ToArray();
+    
     /// <summary>
     /// Фиксация данных, полученных от клиентов
     /// </summary>
     /// <param name="commandBuffer">Буфер с единичной командой</param>
-    private void OnCommandReceived(ReadOnlySpan<byte> commandBuffer)
+    private ValueTask<byte[]?> OnCommandReceived(byte[] commandBuffer)
     {
         var (command, key, value) = CommandParser.Parse(commandBuffer);
         Interlocked.Increment(ref _gotCommands);
-        
+
         Log.Debug("{cmd} : {key} : {value}",
             Encoding.UTF8.GetString(command),
             Encoding.UTF8.GetString(key),
             Encoding.UTF8.GetString(value)
         );
+
+        if (command.IsEmpty || key.IsEmpty)
+            return ValueTask.FromResult<byte[]?>(BadFormatAnswer);
+        
+        var commandValue = Encoding.UTF8.GetString(command);
+        var keyValue = Encoding.UTF8.GetString(key);
+        switch (commandValue)
+        {
+            case "GET":
+                return ValueTask.FromResult(storage.Get(keyValue));
+
+            case "SET":
+                storage.Set(keyValue, value.ToArray());
+                return ValueTask.FromResult<byte[]?>(OkAnswer);
+            
+            case "DELETE":
+                storage.Delete(keyValue);
+                return ValueTask.FromResult<byte[]?>(OkAnswer);
+            
+            default:
+                return ValueTask.FromResult<byte[]?>(NotSupportedCommandAnswer);
+            
+        }
     }
 }

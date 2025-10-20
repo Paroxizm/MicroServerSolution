@@ -4,9 +4,10 @@ using Serilog;
 
 namespace MicroServer;
 
-internal class ClientSocketHandler(Socket client) : IDisposable
+internal class ClientSocketHandler(
+    Socket client,
+    Func<byte[], ValueTask<byte[]?>> onCommand) : IDisposable
 {
-    public Action<ReadOnlySpan<byte>>? OnCommandReceived { get; set; }
     public bool IsAlive { get; private set; }
     private bool _isClientDisposed;
 
@@ -22,7 +23,7 @@ internal class ClientSocketHandler(Socket client) : IDisposable
         {
             IsAlive = true;
             ClientName = client.RemoteEndPoint?.ToString() ?? "<not set>";
-            
+
             var storage = ArrayPool<byte>.Shared.Rent(1024 * 1024);
             var receiveBuffer = ArrayPool<byte>.Shared.Rent(1096);
 
@@ -39,17 +40,35 @@ internal class ClientSocketHandler(Socket client) : IDisposable
                     Log.Information("Client [{addr}] disconnected", ClientName);
                     break;
                 }
-                
+
                 Interlocked.Add(ref ReadTotal, gotBytes);
                 Interlocked.Increment(ref ReadsCount);
 
-                receiveBuffer.AsSpan(0, gotBytes).CopyTo(storage.AsSpan(writeHead));
+                receiveBuffer
+                    .AsSpan(0, gotBytes)
+                    .CopyTo(storage.AsSpan(writeHead));
                 writeHead += gotBytes;
 
                 var (processedBytes, commandsFound) = ProcessBuffer(storage.AsSpan(readHead, writeHead));
 
-                CommandsCount += commandsFound;
-                
+                CommandsCount += commandsFound?.Count ?? 0;
+
+                if (commandsFound != null)
+                {
+                    foreach (var range in commandsFound)
+                    {
+                        var operationResult = await onCommand.Invoke(storage[range]);
+                        if (operationResult is not { Length: > 0 }) 
+                            continue;
+                        
+                        // SEND DATA LENGTH
+                        await client.SendAsync(BitConverter.GetBytes(operationResult.Length));
+                            
+                        // SEND CONTENT
+                        await client.SendAsync(operationResult);
+                    }
+                }
+
                 if (processedBytes == writeHead)
                 {
                     // обработали всё хранилище
@@ -79,21 +98,36 @@ internal class ClientSocketHandler(Socket client) : IDisposable
         }
     }
 
-    private (int, int) ProcessBuffer(Span<byte> buffer)
+    private (int, ICollection<Range>?) ProcessBuffer(ReadOnlySpan<byte> buffer)
     {
         const byte delimiter = 0x0A;
         var initialLength = buffer.Length;
-        var commandsFound = 0;
+        //var commandsFound = 0;
 
         var separatorIndex = buffer.IndexOf(delimiter);
         if (separatorIndex < 0)
-            return (0, 0);
+            return (0, null);
 
+        var foundCommands = new List<Range>();
         var commandSlice = buffer.Slice(0, separatorIndex);
         while (!commandSlice.IsEmpty)
         {
-            OnCommandReceived?.Invoke(commandSlice);
-            commandsFound++;
+            //foundCommands.Add(new Memory<byte>(commandSlice.ToArray()));
+
+            foundCommands.Add(new Range(initialLength - buffer.Length, separatorIndex));
+
+            // var operationResult = onCommand?.Invoke(commandSlice);
+            // if (operationResult == null)
+            // {
+            //     // error or not subscribed
+            // }
+            // else
+            // {
+            //     #warning F&F
+            //     client.SendAsync(operationResult).Wait();
+            // }
+
+            //commandsFound++;
 
             buffer = buffer.Slice(Math.Min(separatorIndex + 1, buffer.Length));
             if (buffer.IsEmpty)
@@ -103,13 +137,13 @@ internal class ClientSocketHandler(Socket client) : IDisposable
             commandSlice = buffer.Slice(0, Math.Min(separatorIndex, buffer.Length));
         }
 
-        return (initialLength - buffer.Length, commandsFound);
+        return (initialLength - buffer.Length, foundCommands);
     }
 
     /// <inheritdoc />
     public void Dispose()
     {
-        OnCommandReceived = null;
+        //onCommand = null;
         if (_isClientDisposed)
             return;
 

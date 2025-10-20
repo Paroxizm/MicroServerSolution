@@ -69,6 +69,7 @@ while (true)
                 if (packetsToSend > 0 && packetsSend >= packetsToSend)
                 {
                     Console.WriteLine($"Breaking by {nameof(packetsSend)} limit");
+                    packetNumber = 0;
                     break;
                 }
 
@@ -104,39 +105,51 @@ static int CreateCommand(in byte[] bytes, in int packet)
 
     if (packet % 2 == 0)
     {
-        command = GetContent(10, 50, packet);
+        command = CreateGetCommand(packet);
     }
     else if (packet % 3 == 0)
     {
-        command = GetContent(10, 100, packet);
+        command = CreateSetCommand(10, 100, packet);
     }
     else if (packet % 5 == 0)
     {
-        command = GetContent(10, 500, packet);
+        command = CreateSetCommand(10, 500, packet);
     }
 
     else if (packet % 7 == 0)
     {
-        command = GetContent(10, 700, packet);
+        command = CreateDeleteCommand(packet);
     }
 
     else if (packet % 11 == 0)
     {
-        command = GetContent(10, 800, packet);
+        command = CreateSetCommand(10, 800, packet);
     }
     else
-        command = GetContent(10, 30, packet);
+        command = CreateGetCommand(packet);
 
     Buffer.BlockCopy(command, 0, bytes, 0, command.Length);
     return command.Length;
     
-    byte[] GetContent(int minLength, int maxLength, int p)
+    byte[] CreateGetCommand(int p)
+    {
+        return Encoding.UTF8.GetBytes($"GET K-{p:0000}\n");
+    }
+    
+    byte[] CreateSetCommand(int minLength, int maxLength, int p)
     {
         return Encoding.UTF8.GetBytes(
             Enumerable
                 .Range(0, Random.Shared.Next(minLength, maxLength))
                 .Select(x => x.ToString("X2"))
-                .Aggregate($"{p:0000} KEY ", (c, n) => c + n) + "\n"
+                .Aggregate($"SET K-{p:0000} ", (c, n) => c + n) + "\n"
         );
     }
+    
+    byte[] CreateDeleteCommand(int p)
+    {
+        return Encoding.UTF8.GetBytes($"DELETE K-{p:0000}\n");
+    }
+    
+    
 }
