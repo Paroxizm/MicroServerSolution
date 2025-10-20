@@ -1,5 +1,6 @@
 ﻿// See https://aka.ms/new-console-template for more information
 
+using System.Threading.Channels;
 using MicroServer;
 using Serilog;
 
@@ -16,12 +17,25 @@ Log.Information("Server starting with:");
 Log.Information(" - address: [{address}]", address);
 Log.Information(" - port: [{port}]", port);
 
-var storage = new SimpleStore();
-
 var tokenSource = new CancellationTokenSource();
+
+var storage = new SimpleStore();
+var channel = Channel.CreateUnbounded<CommandDto>();
+
+var storageClients = new List<StorageClient>{
+        new (storage, channel),
+        new (storage, channel),
+        new (storage, channel),
+        new (storage, channel),
+        new (storage, channel)
+    };
+
+Parallel.ForEach(storageClients, client => client.Start(tokenSource.Token));
+
 try
 {
-    var listener = new TcpServer(storage, address, port);
+    var listener = new TcpServer(channel.Writer, address, port);
+    
     await listener.StartAsync(tokenSource.Token);
 
     Log.Information("MicroServer is started");

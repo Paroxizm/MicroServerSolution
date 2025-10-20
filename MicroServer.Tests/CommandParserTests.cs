@@ -4,22 +4,29 @@ using FluentAssertions;
 
 namespace MicroServer.Tests;
 
-
 /// <summary>
 /// Тесты парсинга команд <see cref="CommandParser"/>
 /// </summary>
 public class CommandParserTests
 {
     /// <summary>
-    /// Корректный разбор команды SET с тремя аргументами.
+    /// Корректный разбор команды SET с четырьмя аргументами.
+    /// CMD KEY LEN VALUE
     /// </summary>
     [Theory]
     [ClassData(typeof(CorrectSetSamples))]
-    public void Should_Parse_Command_Set_With_Three_Arguments(
+    public void Should_Parse_Command_Set_With_Four_Arguments(
         byte[] inputBuffer,
-        byte[] expectedCommand, byte[] expectedKey, byte[] expectedValue)
+        byte[] expectedCommand, byte[] expectedKey, 
+        byte[] expectedLength,
+        byte[] expectedValue, byte[] _)
     {
-        var (command, key, value) = CommandParser.Parse(inputBuffer.AsSpan());
+        var (command,
+             key,
+             length,
+             value,
+             _)
+            = CommandParser.Parse(inputBuffer.AsSpan());
 
         command.ToArray()
             .Should().NotBeEmpty()
@@ -28,10 +35,56 @@ public class CommandParserTests
         key.ToArray()
             .Should().NotBeEmpty()
             .And.BeEquivalentTo(expectedKey);
-
+        
+        length.ToArray()
+            .Should().NotBeEmpty()
+            .And.BeEquivalentTo(expectedLength);
+        
         value.ToArray()
             .Should().NotBeEmpty()
             .And.BeEquivalentTo(expectedValue);
+    }
+
+    /// <summary>
+    /// Корректный разбор команды SET с пятью аргументами
+    /// CMD KEY LEN VALUE TTL
+    /// </summary>
+    [Theory]
+    [ClassData(typeof(CorrectSetSamples))]
+    public void Should_Parse_Command_Set_With_Five_Arguments(
+        byte[] inputBuffer,
+        byte[] expectedCommand, byte[] expectedKey, 
+        byte[] expectedLength,
+        byte[] expectedValue,
+        byte[] expectedTtl
+        )
+    {
+        var (command,
+                key,
+                length,
+                value,
+                ttl)
+            = CommandParser.Parse(inputBuffer.AsSpan());
+
+        command.ToArray()
+            .Should().NotBeEmpty()
+            .And.BeEquivalentTo(expectedCommand);
+
+        key.ToArray()
+            .Should().NotBeEmpty()
+            .And.BeEquivalentTo(expectedKey);
+        
+        length.ToArray()
+            .Should().NotBeEmpty()
+            .And.BeEquivalentTo(expectedLength);
+        
+        value.ToArray()
+            .Should().NotBeEmpty()
+            .And.BeEquivalentTo(expectedValue);
+        
+        ttl.ToArray()
+            .Should().NotBeEmpty()
+            .And.BeEquivalentTo(expectedTtl);
     }
     
     /// <summary>
@@ -43,7 +96,7 @@ public class CommandParserTests
         byte[] inputBuffer,
         byte[] expectedCommand, byte[] expectedKey, byte[] _)
     {
-        var (command, key, value) = CommandParser.Parse(inputBuffer.AsSpan());
+        var (command, key, _, value, _) = CommandParser.Parse(inputBuffer.AsSpan());
 
         command.ToArray()
             .Should().NotBeEmpty()
@@ -63,7 +116,7 @@ public class CommandParserTests
     [ClassData(typeof(MissingKeySamples))]
     public void Should_Fail_If_Command_Get_Key_Missing(byte[] inputBuffer)
     {
-        var (command, key, value) = CommandParser.Parse(inputBuffer.AsSpan());
+        var (command, key, _, value, _) = CommandParser.Parse(inputBuffer.AsSpan());
 
         command.ToArray().Should().BeEmpty();
         key.ToArray().Should().BeEmpty();
@@ -76,18 +129,25 @@ public class CommandParserTests
     [Theory]
     [ClassData(typeof(MultiSpacedSamples))]
     public void Should_Parse_With_Multiple_Spaces(byte[] inputBuffer,
-        byte[] expectedCommand, byte[] expectedKey, byte[] expectedValue)
+        byte[] expectedCommand, byte[] expectedKey, 
+        byte[] expectedLength, byte[] expectedValue, byte[] expectedTtl)
     {
-        var (command, key, value) = CommandParser.Parse(inputBuffer.AsSpan());
+        var (command, key, length, value, ttl) = CommandParser.Parse(inputBuffer.AsSpan());
 
         command.ToArray()
             .Should().BeEquivalentTo(expectedCommand);
 
         key.ToArray()
             .Should().BeEquivalentTo(expectedKey);
-
+        
+        length.ToArray()
+            .Should().BeEquivalentTo(expectedLength);
+        
         value.ToArray()
             .Should().BeEquivalentTo(expectedValue);
+        
+        ttl.ToArray()
+            .Should().BeEquivalentTo(expectedTtl);
     }
 }
 
@@ -95,10 +155,10 @@ public abstract class CommandSamples : IEnumerable<object[]>
 {
     internal static readonly List<string[]> CorrectSetCommands =
     [
-        ["SET KEY1 VALUE1", "SET", "KEY1", "VALUE1"],
-        ["SET KEY2 VALUE2 EXT", "SET", "KEY2", "VALUE2 EXT"]
+        ["SET KEY1 6 VALUE1 1", "SET", "KEY1", "6", "VALUE1", "1"],
+        ["SET KEY2 10 VALUE2 EXT 100", "SET", "KEY2", "10", "VALUE2 EXT", "100"]
     ];
-    
+
     internal static readonly List<string[]> CorrectGetCommands =
     [
         ["GET KEY1", "GET", "KEY1", ""],
@@ -116,10 +176,10 @@ public abstract class CommandSamples : IEnumerable<object[]>
 
     internal static readonly List<string[]> MultiSpacedCommands =
     [
-        ["SET  KEY1 VALUE1", "SET", "KEY1", "VALUE1"],
-        ["SET KEY1  VALUE1", "SET", "KEY1", "VALUE1"],
-        ["SET   KEY1  VALUE1", "SET", "KEY1", "VALUE1"],
-        ["SET KEY2 VALUE2 EXT", "SET", "KEY2", "VALUE2 EXT"]
+        ["SET  KEY1 6 VALUE1 10", "SET", "KEY1", "6", "VALUE1", "10"],
+        ["SET KEY1  6 VALUE1 100", "SET", "KEY1", "6", "VALUE1", "100"],
+        ["SET   KEY1  6 VALUE1 200", "SET", "KEY1", "6", "VALUE1", "200"],
+        ["SET KEY2 10 VALUE2 EXT 300", "SET", "KEY2", "10", "VALUE2 EXT", "300"]
     ];
 
     protected abstract List<string[]> CommandSet { get; }
@@ -141,22 +201,22 @@ public abstract class CommandSamples : IEnumerable<object[]>
 
 public class CorrectSetSamples : CommandSamples
 {
-    protected override  List<string[]> CommandSet => CorrectSetCommands;
+    protected override List<string[]> CommandSet => CorrectSetCommands;
 }
 
 public class MissingKeySamples : CommandSamples
 {
-    protected override  List<string[]> CommandSet => MissingKeyCommands;
+    protected override List<string[]> CommandSet => MissingKeyCommands;
 }
 
 public class MultiSpacedSamples : CommandSamples
 {
     /// <inheritdoc />
-    protected override  List<string[]> CommandSet => MultiSpacedCommands;
+    protected override List<string[]> CommandSet => MultiSpacedCommands;
 }
 
 public class CorrectGetSamples : CommandSamples
 {
     /// <inheritdoc />
-    protected override  List<string[]> CommandSet =>  CorrectGetCommands;
+    protected override List<string[]> CommandSet => CorrectGetCommands;
 }

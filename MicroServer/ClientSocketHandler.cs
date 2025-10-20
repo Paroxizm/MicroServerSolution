@@ -1,12 +1,14 @@
 ﻿using System.Buffers;
 using System.Net.Sockets;
+using System.Text;
+using System.Threading.Channels;
 using Serilog;
 
 namespace MicroServer;
 
 internal class ClientSocketHandler(
     Socket client,
-    Func<byte[], ValueTask<byte[]?>> onCommand) : IDisposable
+    ChannelWriter<CommandDto> channel) : IDisposable
 {
     public bool IsAlive { get; private set; }
     private bool _isClientDisposed;
@@ -57,15 +59,18 @@ internal class ClientSocketHandler(
                 {
                     foreach (var range in commandsFound)
                     {
-                        var operationResult = await onCommand.Invoke(storage[range]);
-                        if (operationResult is not { Length: > 0 }) 
-                            continue;
+                        var response = await ProcessCommandData(storage[range]);
                         
-                        // SEND DATA LENGTH
-                        await client.SendAsync(BitConverter.GetBytes(operationResult.Length));
+                        
+                        // var operationResult = await onCommand.Invoke(storage[range]);
+                        // if (operationResult is not { Length: > 0 }) 
+                        //     continue;
+                        //
+                        // // SEND DATA LENGTH
+                        // //await client.SendAsync(BitConverter.GetBytes(operationResult.Length));
                             
                         // SEND CONTENT
-                        await client.SendAsync(operationResult);
+                        await client.SendAsync(response);
                     }
                 }
 
@@ -96,6 +101,29 @@ internal class ClientSocketHandler(
             _isClientDisposed = true;
             IsAlive = false;
         }
+    }
+
+    private async Task<byte[]> ProcessCommandData(byte[] bytes)
+    {
+        var commandStruct = CommandParser.Parse(bytes.AsSpan());
+
+        var tcs = new TaskCompletionSource<byte[]>();
+        
+        var commandDto = new CommandDto()
+        {
+            Command = Enum.TryParse<CommandType>(
+                        Encoding.UTF8.GetString(commandStruct.Command),
+                        true, out var type) ? type : CommandType.None,
+            Key = Encoding.UTF8.GetString(commandStruct.Key),
+            Data = commandStruct.Data.ToArray(),
+            Ttl = int.TryParse(Encoding.UTF8.GetString(commandStruct.Ttl), out var ttl) ? ttl : 60,
+            BackLink = tcs
+        };
+        
+        await channel.WriteAsync(commandDto);
+        await tcs.Task;
+        
+        return tcs.Task.Result;
     }
 
     private (int, ICollection<Range>?) ProcessBuffer(ReadOnlySpan<byte> buffer)

@@ -119,7 +119,7 @@ public class SimpleStoreTests(ITestOutputHelper logger)
         var store = new SimpleStore();
         var value = "value-1"u8.ToArray();
 
-        store.Set("key-1", value);
+        store.Set("key-1", value, 0);
 
         var gotValue = store.Get("key-1");
         gotValue.Should()

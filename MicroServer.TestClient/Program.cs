@@ -51,18 +51,28 @@ while (true)
             {
                 var commandLength = CreateCommand(commandBuffer, packetNumber);
 
+                Console.WriteLine("[COMMAND]: " + Encoding.UTF8.GetString(commandBuffer.AsSpan().Slice(0, commandLength)));
                 await socket.SendAsync(commandBuffer.AsMemory(0, commandLength));
+                
+                var buf = await socket.ReceiveAsync(commandBuffer.AsMemory(0));
 
+                if (buf == 0)
+                {
+                    Console.WriteLine("Connection broken!");
+                }
+                else
+                    Console.WriteLine("[ANSWER]: " + Encoding.UTF8.GetString(commandBuffer.AsSpan().Slice(0, buf)));
+                
                 packetsSend++;
 
                 totalSent += commandLength;
-                if (timeout > 1000)
-                    Console.WriteLine($"{packetNumber:00000} - sent {commandLength} bytes");
-                else if (packetNumber % 100 == 0)
-                {
-                    Console.WriteLine($"sent {totalSent} bytes");
-                    totalSent = 0;
-                }
+                // if (timeout > 1000)
+                //     Console.WriteLine($"{packetNumber:00000} - sent {commandLength} bytes");
+                // else if (packetNumber % 100 == 0)
+                // {
+                //     Console.WriteLine($"sent {totalSent} bytes");
+                //     totalSent = 0;
+                // }
 
                 packetNumber++;
 
@@ -138,12 +148,12 @@ static int CreateCommand(in byte[] bytes, in int packet)
     
     byte[] CreateSetCommand(int minLength, int maxLength, int p)
     {
-        return Encoding.UTF8.GetBytes(
-            Enumerable
-                .Range(0, Random.Shared.Next(minLength, maxLength))
-                .Select(x => x.ToString("X2"))
-                .Aggregate($"SET K-{p:0000} ", (c, n) => c + n) + "\n"
-        );
+        var payload = Enumerable
+            .Range(0, Random.Shared.Next(minLength, maxLength))
+            .Select(x => x.ToString("X2"))
+            .Aggregate("", (c, n) => c + n);
+        
+        return Encoding.UTF8.GetBytes($"SET K-{p:0000} {payload.Length} {payload} 33\n");
     }
     
     byte[] CreateDeleteCommand(int p)

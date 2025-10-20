@@ -1,27 +1,41 @@
 ﻿namespace MicroServer;
 
+internal class CacheItem
+{
+    public required int Ttl { get; init; }
+    public byte[]? Data { get; init; }
+    public required DateTime ExpireAt { get; init; }
+}
+
 public class SimpleStore : IDisposable
 {
     private readonly ReaderWriterLockSlim _lock = new();
-    private readonly Dictionary<string, byte[]> _storage = [];
+    private readonly Dictionary<string, CacheItem> _storage = [];
 
     private int _setCount;
     private int _getCount;
     private int _deleteCount;
 
-    public (int, int, int) GetStatistic() => (_getCount, _setCount, _deleteCount);
+    public (int get, int set, int delete) GetStatistic() => (_getCount, _setCount, _deleteCount);
 
     /// <summary>
     /// Добавляет или обновляет значение по ключу
     /// </summary>
     /// <param name="key"></param>
     /// <param name="value"></param>
-    public void Set(string key, byte[] value)
+    /// <param name="ttl"></param>
+    public void Set(string key, byte[] value, int ttl = 60)
     {
         _lock.EnterWriteLock();
         try
         {
-            _storage[key] = value;
+            _storage[key] = new CacheItem
+            {
+                Data = value,
+                Ttl = ttl,
+                ExpireAt = DateTime.Now.AddSeconds(ttl)
+            };
+            
             Interlocked.Increment(ref _setCount);
         }
         finally
@@ -43,7 +57,18 @@ public class SimpleStore : IDisposable
         {
             var value = _storage.GetValueOrDefault(key);
             Interlocked.Increment(ref _getCount);
-            return value;
+
+            if (value == null)
+                return null;
+            
+            if (value.ExpireAt.AddSeconds(value.Ttl) < DateTime.UtcNow)
+            {
+                
+                return null;
+               // remove here 
+            }
+
+            return value.Data;
         }
         finally
         {
@@ -79,8 +104,9 @@ public class SimpleStore : IDisposable
                 .Select(x => x)
                 .ToDictionary(
                     x => x.Key, 
-                    x => (byte[])x.Value.Clone());
-            
+                    x => x.Value.Data != null 
+                        ? (byte[])x.Value.Data.Clone()
+                        : []);
         }
         finally
         {
