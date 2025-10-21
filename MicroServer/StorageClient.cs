@@ -24,10 +24,9 @@ internal class StorageClient(
         _readTask = Task.Run(DoReading, cancellationToken);
     }
 
-    private static readonly byte[] EmptyAnswer = "(nil)\n\r"u8.ToArray();
-    private static readonly byte[] OkAnswer = "OK\n\r"u8.ToArray();
-    private static readonly byte[] NotSupportedCommandAnswer = "-ERRCommandNotSupported\n\r"u8.ToArray();
-    private static readonly byte[] BadFormatAnswer = "-ERRBadCommandFormat\n\r"u8.ToArray();
+    private static readonly byte[] EmptyAnswer = "(nil)\r\n"u8.ToArray();
+    private static readonly byte[] OkAnswer = "OK\r\n"u8.ToArray();
+    private static readonly byte[] BadFormatAnswer = "-ERR UnknownOrMalformedCommand\r\n"u8.ToArray();
 
     /// <summary>
     /// Количество чтений из канала
@@ -57,25 +56,26 @@ internal class StorageClient(
 
                     Interlocked.Increment(ref ReadCommands);
                     
-                    if (command.Command == CommandType.None)
-                    {
-                        Interlocked.Increment(ref FailCommands);
-                        command.SourceTask?.SetResult(BadFormatAnswer);
-                        return;
-                    }
-
                     var result = command.Command switch
                     {
-                        CommandType.None => BadFormatAnswer,
+                        CommandType.None => null,
                         CommandType.Get => storage.Get(command.Key) ?? EmptyAnswer,
                         CommandType.Set => SetInStorage(command.Key, command.Data?.ToArray() ?? [], command.Ttl),
                         CommandType.Delete => DeleteFromStorage(command.Key),
                         CommandType.Stat => GetStorageStatistic(),
-                        _ => NotSupportedCommandAnswer
+                        _ => null
                     };
-                    
-                    Interlocked.Increment(ref GoodCommands);
-                    command.SourceTask?.SetResult(result);
+
+                    if (result == null)
+                    {
+                        Interlocked.Increment(ref FailCommands);
+                        command.SourceTask?.SetResult(BadFormatAnswer);
+                    }
+                    else
+                    {
+                        Interlocked.Increment(ref GoodCommands);
+                        command.SourceTask?.SetResult(result);
+                    }
                 }
                 catch (Exception e)
                 {
@@ -88,14 +88,18 @@ internal class StorageClient(
         }
         finally
         {
-            _readTask?.Dispose();
+            if (_readTask != null)
+            {
+                if(_readTask.IsCompleted)
+                    _readTask.Dispose();
+            }
         }
     }
 
     private byte[] GetStorageStatistic()
     {
         var (get, set, delete) = storage.GetStatistic();
-        return Encoding.UTF8.GetBytes($"GET: {get}; SET: {set}; DELETE: {delete};");
+        return Encoding.UTF8.GetBytes($"GET: {get:000000}; SET: {set:000000}; DELETE: {delete:000000};\r\n");
     }
 
     private byte[] DeleteFromStorage(string key)

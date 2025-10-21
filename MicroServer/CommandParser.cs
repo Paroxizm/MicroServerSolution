@@ -33,7 +33,7 @@ public static class CommandParser
                 ttlSpan = GetFirstValue(input);
         }
 
-        if(commandSpan.Length == 0 || keySpan.Length == 0)
+        if(commandSpan.Length == 0)
             return new CommandStruct<byte>(
                 ReadOnlySpan<byte>.Empty, 
                 ReadOnlySpan<byte>.Empty,
