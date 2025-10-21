@@ -2,17 +2,19 @@
 using System.Net.Sockets;
 using System.Text;
 using System.Threading.Channels;
+using MicroServer.Model;
 using Serilog;
 
 namespace MicroServer;
 
-internal class ClientSocketHandler(
+public class ClientSocketHandler(
     Socket client,
     ChannelWriter<CommandDto> channel) : IDisposable
 {
     public bool IsAlive { get; private set; }
     private bool _isClientDisposed;
 
+    public static int CommandsReceived;
     public int ReadsCount;
     public int ReadTotal;
     public int CommandsCount;
@@ -59,17 +61,9 @@ internal class ClientSocketHandler(
                 {
                     foreach (var range in commandsFound)
                     {
+                        Interlocked.Increment(ref CommandsReceived);
+                        
                         var response = await ProcessCommandData(storage[range]);
-                        
-                        
-                        // var operationResult = await onCommand.Invoke(storage[range]);
-                        // if (operationResult is not { Length: > 0 }) 
-                        //     continue;
-                        //
-                        // // SEND DATA LENGTH
-                        // //await client.SendAsync(BitConverter.GetBytes(operationResult.Length));
-                            
-                        // SEND CONTENT
                         await client.SendAsync(response);
                     }
                 }
@@ -105,32 +99,41 @@ internal class ClientSocketHandler(
 
     private async Task<byte[]> ProcessCommandData(byte[] bytes)
     {
-        var commandStruct = CommandParser.Parse(bytes.AsSpan());
-
-        var tcs = new TaskCompletionSource<byte[]>();
-        
-        var commandDto = new CommandDto()
+        try
         {
-            Command = Enum.TryParse<CommandType>(
-                        Encoding.UTF8.GetString(commandStruct.Command),
-                        true, out var type) ? type : CommandType.None,
-            Key = Encoding.UTF8.GetString(commandStruct.Key),
-            Data = commandStruct.Data.ToArray(),
-            Ttl = int.TryParse(Encoding.UTF8.GetString(commandStruct.Ttl), out var ttl) ? ttl : 60,
-            BackLink = tcs
-        };
-        
-        await channel.WriteAsync(commandDto);
-        await tcs.Task;
-        
-        return tcs.Task.Result;
+            var commandStruct = CommandParser.Parse(bytes.AsSpan());
+            var tcs = new TaskCompletionSource<byte[]>();
+
+            var commandDto = new CommandDto
+            {
+                Command = Enum.TryParse<CommandType>(
+                    Encoding.UTF8.GetString(commandStruct.Command),
+                    true, out var type)
+                    ? type
+                    : CommandType.None,
+                Key = Encoding.UTF8.GetString(commandStruct.Key).Trim(),
+                Data = commandStruct.Data.ToArray(),
+                Ttl = int.TryParse(Encoding.UTF8.GetString(commandStruct.Ttl).Trim(), out var ttl) ? ttl : 60,
+                SourceTask = tcs
+            };
+
+            await channel.WriteAsync(commandDto);
+            
+            await tcs.Task;
+
+            return tcs.Task.Result;
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine(e);
+            return "-ERRInternalError"u8.ToArray();
+        }
     }
 
-    private (int, ICollection<Range>?) ProcessBuffer(ReadOnlySpan<byte> buffer)
+    private static (int, ICollection<Range>?) ProcessBuffer(ReadOnlySpan<byte> buffer)
     {
         const byte delimiter = 0x0A;
         var initialLength = buffer.Length;
-        //var commandsFound = 0;
 
         var separatorIndex = buffer.IndexOf(delimiter);
         if (separatorIndex < 0)
@@ -140,22 +143,7 @@ internal class ClientSocketHandler(
         var commandSlice = buffer.Slice(0, separatorIndex);
         while (!commandSlice.IsEmpty)
         {
-            //foundCommands.Add(new Memory<byte>(commandSlice.ToArray()));
-
             foundCommands.Add(new Range(initialLength - buffer.Length, separatorIndex));
-
-            // var operationResult = onCommand?.Invoke(commandSlice);
-            // if (operationResult == null)
-            // {
-            //     // error or not subscribed
-            // }
-            // else
-            // {
-            //     #warning F&F
-            //     client.SendAsync(operationResult).Wait();
-            // }
-
-            //commandsFound++;
 
             buffer = buffer.Slice(Math.Min(separatorIndex + 1, buffer.Length));
             if (buffer.IsEmpty)
@@ -171,7 +159,6 @@ internal class ClientSocketHandler(
     /// <inheritdoc />
     public void Dispose()
     {
-        //onCommand = null;
         if (_isClientDisposed)
             return;
 

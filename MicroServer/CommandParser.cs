@@ -1,4 +1,6 @@
-﻿namespace MicroServer;
+﻿using MicroServer.Model;
+
+namespace MicroServer;
 
 public static class CommandParser
 {
@@ -10,9 +12,9 @@ public static class CommandParser
         var keySpan = GetFirstValue(input);
         input = input.Slice(keySpan.Length + CountSpacesToSkip(input.Slice(keySpan.Length)));
 
-        ReadOnlySpan<byte> lengthSpan = ReadOnlySpan<byte>.Empty;
-        ReadOnlySpan<byte> dataSpan = ReadOnlySpan<byte>.Empty;
-        ReadOnlySpan<byte> ttlSpan = ReadOnlySpan<byte>.Empty;
+        var lengthSpan = ReadOnlySpan<byte>.Empty;
+        var dataSpan = ReadOnlySpan<byte>.Empty;
+        var ttlSpan = ReadOnlySpan<byte>.Empty;
         
         if (!input.IsEmpty)
         {

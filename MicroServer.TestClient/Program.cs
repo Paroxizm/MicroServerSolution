@@ -3,8 +3,6 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 
-var packetNumber = 2;
-
 // Таймаут между отправками сообщений
 var timeout = int.Parse(args.FirstOrDefault(x => x.StartsWith("--timeout"))?.Split('=')[1] ?? "5000");
 
@@ -18,6 +16,9 @@ var packetsToSend = int.Parse(args.FirstOrDefault(x => x.StartsWith("--packets")
 
 // Заголовок окна (не обязательно)
 var title = args.FirstOrDefault(x => x.StartsWith("--title"))?.Split('=')[1];
+
+// Если параметр найден - запросы и ответы будут выводиться в консоль
+var verbose = args.Any(x => x.StartsWith("--verbose"));
 
 if(!string.IsNullOrEmpty(title))
     Console.Title = title;
@@ -49,40 +50,38 @@ while (true)
         {
             try
             {
-                var commandLength = CreateCommand(commandBuffer, packetNumber);
+                var keyNumber = Random.Shared.Next(1, 50);
+                
+                var commandLength = CreateCommand(commandBuffer, keyNumber);
 
-                Console.WriteLine("[COMMAND]: " + Encoding.UTF8.GetString(commandBuffer.AsSpan().Slice(0, commandLength)));
+                if(verbose)
+                    Console.WriteLine("[REQUEST]: " + Encoding.UTF8.GetString(commandBuffer.AsSpan().Slice(0, commandLength)).Trim());
+                
                 await socket.SendAsync(commandBuffer.AsMemory(0, commandLength));
                 
-                var buf = await socket.ReceiveAsync(commandBuffer.AsMemory(0));
+                var received = await socket.ReceiveAsync(commandBuffer.AsMemory(0));
 
-                if (buf == 0)
+                if (received == 0)
                 {
                     Console.WriteLine("Connection broken!");
+                    break;
                 }
-                else
-                    Console.WriteLine("[ANSWER]: " + Encoding.UTF8.GetString(commandBuffer.AsSpan().Slice(0, buf)));
+                if(verbose)
+                    Console.WriteLine("[RESPONSE]: " + Encoding.UTF8.GetString(commandBuffer.AsSpan().Slice(0, received)).Trim());
                 
                 packetsSend++;
 
                 totalSent += commandLength;
-                // if (timeout > 1000)
-                //     Console.WriteLine($"{packetNumber:00000} - sent {commandLength} bytes");
-                // else if (packetNumber % 100 == 0)
-                // {
-                //     Console.WriteLine($"sent {totalSent} bytes");
-                //     totalSent = 0;
-                // }
-
-                packetNumber++;
-
+                
                 if (packetsToSend > 0 && packetsSend >= packetsToSend)
                 {
                     Console.WriteLine($"Breaking by {nameof(packetsSend)} limit");
-                    packetNumber = 0;
                     break;
                 }
 
+                if (packetsSend % 100 == 0)
+                    Console.WriteLine($"Sent {totalSent: ### ### ##0} bytes, {packetsSend} commands");
+                
                 await Task.Delay(timeout);
             }
             catch (Exception e)
@@ -110,56 +109,37 @@ while (true)
 
 static int CreateCommand(in byte[] bytes, in int packet)
 {
-    byte[] command;
+    var type = Random.Shared.Next(1, 4);
 
-
-    if (packet % 2 == 0)
+    var command = type switch
     {
-        command = CreateGetCommand(packet);
-    }
-    else if (packet % 3 == 0)
-    {
-        command = CreateSetCommand(10, 100, packet);
-    }
-    else if (packet % 5 == 0)
-    {
-        command = CreateSetCommand(10, 500, packet);
-    }
-
-    else if (packet % 7 == 0)
-    {
-        command = CreateDeleteCommand(packet);
-    }
-
-    else if (packet % 11 == 0)
-    {
-        command = CreateSetCommand(10, 800, packet);
-    }
-    else
-        command = CreateGetCommand(packet);
-
+        1 => CreateSetCommand(10, 100, packet, 1),
+        2 => CreateGetCommand(packet),
+        3 => CreateSetCommand(10, 100, packet, 1),
+        4 => CreateDeleteCommand(packet),
+        _ => CreateGetCommand(packet)
+    };
+    
     Buffer.BlockCopy(command, 0, bytes, 0, command.Length);
     return command.Length;
+}
+
+static byte[] CreateGetCommand(int p)
+{
+    return Encoding.UTF8.GetBytes($"GET K-{p:0000}\n");
+}
     
-    byte[] CreateGetCommand(int p)
-    {
-        return Encoding.UTF8.GetBytes($"GET K-{p:0000}\n");
-    }
-    
-    byte[] CreateSetCommand(int minLength, int maxLength, int p)
-    {
-        var payload = Enumerable
-            .Range(0, Random.Shared.Next(minLength, maxLength))
-            .Select(x => x.ToString("X2"))
-            .Aggregate("", (c, n) => c + n);
+static byte[] CreateSetCommand(int minLength, int maxLength, int p, int ttl)
+{
+    var payload = Enumerable
+        .Range(0, Random.Shared.Next(minLength, maxLength))
+        .Select(x => x.ToString("X2"))
+        .Aggregate("", (c, n) => c + n);
         
-        return Encoding.UTF8.GetBytes($"SET K-{p:0000} {payload.Length} {payload} 33\n");
-    }
+    return Encoding.UTF8.GetBytes($"SET K-{p:0000} {payload.Length} {payload} {ttl}\n");
+}
     
-    byte[] CreateDeleteCommand(int p)
-    {
-        return Encoding.UTF8.GetBytes($"DELETE K-{p:0000}\n");
-    }
-    
-    
+static byte[] CreateDeleteCommand(int p)
+{
+    return Encoding.UTF8.GetBytes($"DELETE K-{p:0000}\n");
 }

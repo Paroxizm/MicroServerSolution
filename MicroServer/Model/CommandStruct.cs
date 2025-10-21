@@ -1,4 +1,4 @@
-﻿namespace MicroServer;
+﻿namespace MicroServer.Model;
 
 /// <summary>
 /// Структура команды

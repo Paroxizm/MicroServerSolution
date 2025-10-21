@@ -2,7 +2,7 @@
 . (".\_Start-Apps.ps1")
 
 $port = 40567
-$timeout = 3000
+$timeout = 30
 $address = "127.0.0.1"
 $clientsToRun = 5
 

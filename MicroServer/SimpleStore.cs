@@ -1,11 +1,6 @@
-﻿namespace MicroServer;
+﻿using MicroServer.Model;
 
-internal class CacheItem
-{
-    public required int Ttl { get; init; }
-    public byte[]? Data { get; init; }
-    public required DateTime ExpireAt { get; init; }
-}
+namespace MicroServer;
 
 public class SimpleStore : IDisposable
 {
@@ -32,8 +27,7 @@ public class SimpleStore : IDisposable
             _storage[key] = new CacheItem
             {
                 Data = value,
-                Ttl = ttl,
-                ExpireAt = DateTime.Now.AddSeconds(ttl)
+                ExpireAt = DateTime.UtcNow.AddSeconds(ttl)
             };
             
             Interlocked.Increment(ref _setCount);
@@ -52,6 +46,7 @@ public class SimpleStore : IDisposable
     /// <exception cref="NotImplementedException"></exception>
     public byte[]? Get(string key)
     {
+        var removeAsExpired = false;
         _lock.EnterReadLock();
         try
         {
@@ -61,9 +56,9 @@ public class SimpleStore : IDisposable
             if (value == null)
                 return null;
             
-            if (value.ExpireAt.AddSeconds(value.Ttl) < DateTime.UtcNow)
+            if (value.ExpireAt < DateTime.UtcNow)
             {
-                
+                removeAsExpired = true;
                 return null;
                // remove here 
             }
@@ -73,6 +68,9 @@ public class SimpleStore : IDisposable
         finally
         {
             _lock.ExitReadLock();
+            
+            if(removeAsExpired)
+                Delete(key);
         }
     }
 
