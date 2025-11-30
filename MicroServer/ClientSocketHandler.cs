@@ -9,15 +9,20 @@ namespace MicroServer;
 
 public class ClientSocketHandler(
     Socket client,
-    ChannelWriter<CommandDto> channel) : IDisposable
+    ChannelWriter<CommandDto> channel,
+    Action<Socket> onConnectionHandled)
 {
     public bool IsAlive { get; private set; }
-    private bool _isClientDisposed;
+    
+    public static int CommandsReceived => _commandsReceived;
+    private static int _commandsReceived;
 
-    public static int CommandsReceived;
-    public int ReadsCount;
-    public int ReadTotal;
-    public int CommandsCount;
+    public int ReadsCount => _readsCount;
+    private int _readsCount;
+    public int ReadTotal => _readTotal;
+    private int _readTotal;
+    public int CommandsCount => _commandsCount;
+    private int _commandsCount;
 
     public string ClientName = string.Empty;
 
@@ -28,60 +33,70 @@ public class ClientSocketHandler(
             IsAlive = true;
             ClientName = client.RemoteEndPoint?.ToString() ?? "<not set>";
 
-            var storage = ArrayPool<byte>.Shared.Rent(1024 * 1024);
-            var receiveBuffer = ArrayPool<byte>.Shared.Rent(1096);
-
-            var writeHead = 0;
-            var readHead = 0;
-            while (!token.IsCancellationRequested)
+            var storage = ArrayPool<byte>.Shared.Rent(1024 * 1024*10);
+            try
             {
-                receiveBuffer.AsSpan().Clear();
-
-                var gotBytes = await client.ReceiveAsync(receiveBuffer);
-
-                if (gotBytes == 0)
+                var receiveBuffer = ArrayPool<byte>.Shared.Rent(4096);
+                try
                 {
-                    Log.Information("Client [{addr}] disconnected", ClientName);
-                    break;
-                }
-
-                Interlocked.Add(ref ReadTotal, gotBytes);
-                Interlocked.Increment(ref ReadsCount);
-
-                receiveBuffer
-                    .AsSpan(0, gotBytes)
-                    .CopyTo(storage.AsSpan(writeHead));
-                writeHead += gotBytes;
-
-                var (processedBytes, commandsFound) = ProcessBuffer(storage.AsSpan(readHead, writeHead));
-
-                CommandsCount += commandsFound?.Count ?? 0;
-
-                if (commandsFound != null)
-                {
-                    foreach (var range in commandsFound)
+                    var writeHead = 0;
+                    var readHead = 0;
+                    while (!token.IsCancellationRequested)
                     {
-                        Interlocked.Increment(ref CommandsReceived);
+                        receiveBuffer.AsSpan().Clear();
+
+                        var gotBytes = await client.ReceiveAsync(receiveBuffer);
+
+                        if (gotBytes == 0)
+                        {
+                            Log.Information("Client [{addr}] disconnected", ClientName);
+                            break;
+                        }
+
+                        Interlocked.Add(ref _readTotal, gotBytes);
+                        Interlocked.Increment(ref _readsCount);
+
+                        receiveBuffer
+                            .AsSpan(0, gotBytes)
+                            .CopyTo(storage.AsSpan(writeHead));
+                        writeHead += gotBytes;
+
+                        var (processedBytes, commandsFound) = ProcessBuffer(storage.AsSpan(readHead, writeHead));
+
+                        _commandsCount += commandsFound?.Count ?? 0;
+
+                        if (commandsFound != null)
+                        {
+                            foreach (var range in commandsFound)
+                            {
+                                Interlocked.Increment(ref _commandsReceived);
+
+                                var response = await ProcessCommandData(storage[range]);
+                                await client.SendAsync(response);
+                            }
+                        }
+
+                        if (processedBytes == writeHead)
+                        {
+                            // обработали всё хранилище
+                            writeHead = 0;
+                            readHead = 0;
+                            storage.AsSpan().Clear();
+                            continue;
+                        }
                         
-                        var response = await ProcessCommandData(storage[range]);
-                        await client.SendAsync(response);
+                        readHead += processedBytes;
                     }
                 }
-
-                if (processedBytes == writeHead)
+                finally
                 {
-                    // обработали всё хранилище
-                    writeHead = 0;
-                    readHead = 0;
-                    storage.AsSpan().Clear();
-                    continue;
+                    ArrayPool<byte>.Shared.Return(receiveBuffer);
                 }
-
-                readHead += processedBytes;
             }
-
-            ArrayPool<byte>.Shared.Return(receiveBuffer);
-            ArrayPool<byte>.Shared.Return(storage);
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(storage);
+            }
         }
         catch (Exception e)
         {
@@ -89,11 +104,8 @@ public class ClientSocketHandler(
         }
         finally
         {
-            client.Shutdown(SocketShutdown.Both);
-            client.Close();
-            client.Dispose();
-            _isClientDisposed = true;
             IsAlive = false;
+            onConnectionHandled(client);
         }
     }
 
@@ -118,7 +130,7 @@ public class ClientSocketHandler(
             };
 
             await channel.WriteAsync(commandDto);
-            
+
             await tcs.Task;
 
             return tcs.Task.Result;
@@ -154,16 +166,5 @@ public class ClientSocketHandler(
         }
 
         return (initialLength - buffer.Length, foundCommands);
-    }
-
-    /// <inheritdoc />
-    public void Dispose()
-    {
-        if (_isClientDisposed)
-            return;
-
-        client.Shutdown(SocketShutdown.Both);
-        client.Close();
-        client.Dispose();
     }
 }

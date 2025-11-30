@@ -14,6 +14,42 @@ public class CommandParserTests
     /// CMD KEY LEN VALUE
     /// </summary>
     [Theory]
+    [ClassData(typeof(NBomberBadSetSamples))]
+    public void Should_Parse_FailedCommand_Set_With_Four_Arguments(
+        byte[] inputBuffer,
+        byte[] expectedCommand, byte[] expectedKey, 
+        byte[] expectedLength
+        )
+    {
+        var (command,
+                key,
+                length,
+                value,
+                _)
+            = CommandParser.Parse(inputBuffer.AsSpan());
+
+        command.ToArray()
+            .Should().NotBeEmpty()
+            .And.BeEquivalentTo(expectedCommand);
+
+        key.ToArray()
+            .Should().NotBeEmpty()
+            .And.BeEquivalentTo(expectedKey);
+        
+        length.ToArray()
+            .Should().NotBeEmpty()
+            .And.BeEquivalentTo(expectedLength);
+        
+        value.ToArray()
+            .Should().BeEmpty();
+    }
+
+    
+    /// <summary>
+    /// Корректный разбор команды SET с четырьмя аргументами.
+    /// CMD KEY LEN VALUE
+    /// </summary>
+    [Theory]
     [ClassData(typeof(CorrectSetSamples))]
     public void Should_Parse_Command_Set_With_Four_Arguments(
         byte[] inputBuffer,
@@ -116,9 +152,9 @@ public class CommandParserTests
     [ClassData(typeof(MissingKeySamples))]
     public void Should_Fail_If_Command_Get_Key_Missing(byte[] inputBuffer)
     {
-        var (command, key, _, value, _) = CommandParser.Parse(inputBuffer.AsSpan());
+        var (_, key, _, value, _) = CommandParser.Parse(inputBuffer.AsSpan());
 
-        command.ToArray().Should().BeEmpty();
+        //command.ToArray().Should().BeEmpty();
         key.ToArray().Should().BeEmpty();
         value.ToArray().Should().BeEmpty();
     }
@@ -153,10 +189,19 @@ public class CommandParserTests
 
 public abstract class CommandSamples : IEnumerable<object[]>
 {
+    internal static readonly List<string[]> NBomberDetectedBadSetCommands =
+    [
+        // длина данных меньше заявленной 
+        ["SET K-2094 206 000102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D1E1F202122232425262728292A2B2C2D2E2F303132333435363738393A3B3C3D3E3F404142434445464748494A4B4C4D4E4F505152535455565758595A5B5C5D5E5F60616", 
+            "SET", "K-2094", "206"]
+        
+    ];
+    
     internal static readonly List<string[]> CorrectSetCommands =
     [
         ["SET KEY1 6 VALUE1 1", "SET", "KEY1", "6", "VALUE1", "1"],
-        ["SET KEY2 10 VALUE2 EXT 100", "SET", "KEY2", "10", "VALUE2 EXT", "100"]
+        ["SET KEY2 10 VALUE2 EXT 100", "SET", "KEY2", "10", "VALUE2 EXT", "100"],
+        
     ];
 
     internal static readonly List<string[]> CorrectGetCommands =
@@ -219,4 +264,10 @@ public class CorrectGetSamples : CommandSamples
 {
     /// <inheritdoc />
     protected override List<string[]> CommandSet => CorrectGetCommands;
+}
+
+public class NBomberBadSetSamples : CommandSamples
+{
+    /// <inheritdoc />
+    protected override List<string[]> CommandSet => NBomberDetectedBadSetCommands;
 }

@@ -24,11 +24,13 @@ public static class CommandParser
            
             var length = int.TryParse(lengthSpan, out var len) ? len : 0;
 
-            if (length > 0)
+            if (length > 0 && input.Length >= length)
             {
                 dataSpan = input.Slice(0, len);
                 input = input.Slice(dataSpan.Length + CountSpacesToSkip(input.Slice(dataSpan.Length)));
             }
+            else input = Span<byte>.Empty;
+            
             if(!input.IsEmpty)
                 ttlSpan = GetFirstValue(input);
         }

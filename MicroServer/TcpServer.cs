@@ -28,7 +28,7 @@ public class TcpServer(
             {
                 var clientSocket = await _socket.AcceptAsync(cancellationToken);
 
-                var handler = new ClientSocketHandler(clientSocket, writer);
+                var handler = new ClientSocketHandler(clientSocket, writer, OnConnectionHandled);
                 _handlers.AddHandler(handler);
 
                 _ = handler.StartClientAsync(cancellationToken);
@@ -52,6 +52,20 @@ public class TcpServer(
         }
     }
 
+    private void OnConnectionHandled(Socket clientSocket)
+    {
+        try
+        {
+            clientSocket.Shutdown(SocketShutdown.Both);
+            clientSocket.Close();
+            clientSocket.Dispose();
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine("Error on complete socket: " + e.Message);
+        }
+    }
+    
     public void Cleanup()
     {
         _handlers.Purge();
