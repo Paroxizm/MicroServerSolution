@@ -6,7 +6,8 @@ function Start-Apps
         [int]$timeout,
         [int]$clientsToRun,
         [bool]$startServer,
-        [bool]$startClients
+        [bool]$startClients,
+        [string]$verbose
     )
 
     if ($startServer)
@@ -19,7 +20,7 @@ function Start-Apps
         for ($i = 1; $i -le $clientsToRun; $i++) {
 
             Start-Process -FilePath .\MicroServer.TestClient\bin\Debug\net9.0\MicroServer.TestClient.exe `
-                -ArgumentList "--timeout=$timeout","--address=$address","--port=$port","--title=""Client #$i"""
+                -ArgumentList "--timeout=$timeout","--address=$address","--port=$port","--title=""Client #$i""", "$verbose"
 
         }
     }

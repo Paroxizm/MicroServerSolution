@@ -1,28 +1,55 @@
-﻿namespace MicroServer;
+﻿using MicroServer.Model;
+
+namespace MicroServer;
 
 public static class CommandParser
 {
-    public static CommandParts<byte> Parse(ReadOnlySpan<byte> input)
+    public static CommandStruct<byte> Parse(ReadOnlySpan<byte> input)
     {
-        var command = GetFirstValue(input);
-        input = input.Slice(command.Length + CountSpacesToSkip(input.Slice(command.Length)));
+        var commandSpan = GetFirstValue(input);
+        input = input.Slice(commandSpan.Length + CountSpacesToSkip(input.Slice(commandSpan.Length)));
         
-        var commandKey = GetFirstValue(input);
-        input = input.Slice(commandKey.Length + CountSpacesToSkip(input.Slice(commandKey.Length)));
+        var keySpan = GetFirstValue(input);
+        input = input.Slice(keySpan.Length + CountSpacesToSkip(input.Slice(keySpan.Length)));
+
+        var lengthSpan = ReadOnlySpan<byte>.Empty;
+        var dataSpan = ReadOnlySpan<byte>.Empty;
+        var ttlSpan = ReadOnlySpan<byte>.Empty;
         
-        var commandValue = input;
-        
-        if(command.Length == 0 || commandKey.Length == 0)
-            return new CommandParts<byte>(
+        if (!input.IsEmpty)
+        {
+            lengthSpan = GetFirstValue(input);
+            
+            input = input.Slice(lengthSpan.Length + CountSpacesToSkip(input.Slice(lengthSpan.Length)));
+           
+            var length = int.TryParse(lengthSpan, out var len) ? len : 0;
+
+            if (length > 0 && input.Length >= length)
+            {
+                dataSpan = input.Slice(0, len);
+                input = input.Slice(dataSpan.Length + CountSpacesToSkip(input.Slice(dataSpan.Length)));
+            }
+            else input = Span<byte>.Empty;
+            
+            if(!input.IsEmpty)
+                ttlSpan = GetFirstValue(input);
+        }
+
+        if(commandSpan.Length == 0)
+            return new CommandStruct<byte>(
                 ReadOnlySpan<byte>.Empty, 
+                ReadOnlySpan<byte>.Empty,
+                ReadOnlySpan<byte>.Empty,
                 ReadOnlySpan<byte>.Empty,
                 ReadOnlySpan<byte>.Empty
             );    
         
-        return new CommandParts<byte>(
-            command, 
-            commandKey,
-            commandValue.Length == 0 ? ReadOnlySpan<byte>.Empty : commandValue
+        return new CommandStruct<byte>(
+            commandSpan, 
+            keySpan,
+            lengthSpan,
+            dataSpan,
+            ttlSpan
             );
         
         int CountSpacesToSkip(ReadOnlySpan<byte> buffer)

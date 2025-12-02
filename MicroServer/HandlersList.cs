@@ -9,37 +9,54 @@ internal class HandlersList : IDisposable
     public List<ClientSocketHandler> Snapshot()
     {
         _lock.EnterReadLock();
-        var result = _handlers.ToList();
-        _lock.ExitReadLock();
-        
-        return result;
+        try
+        {
+            return _handlers.ToList();
+        }
+        finally
+        {
+            _lock.ExitReadLock();
+        }
     }
-
 
     public void AddHandler(ClientSocketHandler handler)
     {
         _lock.EnterWriteLock();
-        _handlers.Add(handler);
-        _lock.ExitWriteLock();
-        
+        try
+        {
+            _handlers.Add(handler);
+        }
+        finally
+        {
+            _lock.ExitWriteLock();
+        }
     }
 
-    public int Purge()
+    public void Purge()
     {
         _lock.EnterWriteLock();
-        var removed = _handlers.RemoveAll(x => !x.IsAlive);
-        _lock.ExitWriteLock();
-        
-        return removed;
+        try
+        {
+            _handlers.RemoveAll(x => !x.IsAlive);
+        }
+        finally
+        {
+            _lock.ExitWriteLock();
+        }
     }
 
     /// <inheritdoc />
     public void Dispose()
     {
         _lock.EnterWriteLock();
-        _handlers.Clear();
-        _lock.ExitWriteLock();
-        
+        try
+        {
+            _handlers.Clear();
+        }
+        finally
+        {
+            _lock.ExitWriteLock();
+        }
         _lock.Dispose();
     }
 }

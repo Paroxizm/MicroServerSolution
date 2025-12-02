@@ -1,34 +1,81 @@
 ﻿// See https://aka.ms/new-console-template for more information
 
+using System.Text;
+using System.Threading.Channels;
 using MicroServer;
+using MicroServer.Model;
 using Serilog;
 
+// адрес сервера 
 var address = args.FirstOrDefault(x => x.StartsWith("--address"))?.Split('=')[1] ?? "127.0.0.1";
+// порт, на котором слушает сервер
 var port = int.Parse(args.FirstOrDefault(x => x.StartsWith("--port"))?.Split('=')[1] ?? "40567");
+// количество параллельных писателей в хранилище 
+var storageClientsCount = int.Parse(args.FirstOrDefault(x => x.StartsWith("--storage-clients"))?.Split('=')[1] ?? "5");
+
+Console.Title = $"MicroServer at [{address}:{port}]";
 
 Log.Logger = new LoggerConfiguration()
     .MinimumLevel.Debug()
     .WriteTo.File("log.txt", rollingInterval: RollingInterval.Day)
-    .WriteTo.Console()
+    .WriteTo.Debug()
     .CreateLogger();
 
 Log.Information("Server starting with:");
 Log.Information(" - address: [{address}]", address);
 Log.Information(" - port: [{port}]", port);
 
-
 var tokenSource = new CancellationTokenSource();
+
+var storage = new SimpleStore();
+var channel = Channel.CreateUnbounded<CommandDto>();
+
+var storageClients =
+    Enumerable.Range(0, storageClientsCount)
+        .Select(_ => new StorageClient(storage, channel))
+        .ToList();
+
+Parallel.ForEach(storageClients, client => client.Start(tokenSource.Token));
+
 try
 {
-    var listener = new TcpServer(address, port);
-    await listener.StartAsync(tokenSource.Token);
+    var listener = new TcpServer(channel.Writer, address, port);
+
+    _ = listener.StartAsync(tokenSource.Token);
 
     Log.Information("MicroServer is started");
 
     while (!tokenSource.IsCancellationRequested)
     {
-        await Task.Delay(1000, tokenSource.Token);
+        if (Console.KeyAvailable
+            && Console.ReadKey(true).Key == ConsoleKey.Q)
+            break;
+
+        try
+        {
+            listener.Cleanup();
+            Console.SetCursorPosition(0, 0);
+            Console.WriteLine(FormatStatus(listener, address, port, storageClients, storage));
+            await Task.Delay(2000, tokenSource.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            break;
+        }
+        catch (Exception e)
+        {
+            Log.Error(e, "Error: {msg}", e.Message);
+            break;
+        }
     }
+
+    channel.Writer.Complete();
+    if (!tokenSource.IsCancellationRequested)
+        tokenSource.Cancel();
+}
+catch (OperationCanceledException)
+{
+    //
 }
 catch (Exception ex)
 {
@@ -38,4 +85,50 @@ finally
 {
     Log.Information("MicroServer is stopped");
     Log.CloseAndFlush();
+}
+
+return 0;
+
+
+// форматирование текущего состояния сервера в строку
+static string FormatStatus(
+    TcpServer tcpServer, string address, int port,
+    List<StorageClient> storageClients,
+    SimpleStore storage)
+{
+    var result = new StringBuilder();
+    result.AppendLine("-".PadRight(80, '-'));
+
+    var connections = tcpServer.GetSnapshot();
+
+    // вывод статистики соединений
+    result.AppendLine($"Listening at [{address}:{port}]".PadRight(80));
+    result.AppendLine($"Got commands: {ClientSocketHandler.CommandsReceived}".PadRight(80));
+    result.AppendLine($"Actual handlers: [{connections.Count}]".PadRight(80));
+    result.AppendLine($"Storage clients: [{storageClients.Count}]".PadRight(80));
+    foreach (var client in storageClients)
+    {
+        result.AppendLine(
+            $" > read: {client.ReadCommands:0000}, " +
+            $"good: {client.GoodCommands:00000}, " +
+            $"fail: {client.FailCommands:00000}".PadRight(80));
+    }
+
+    var stat = storage.GetStatistic();
+    result.AppendLine(
+        $"Storage status: operations={stat.get + stat.set + stat.delete} get={stat.get}; set={stat.set}; delete={stat.delete}"
+            .PadRight(80));
+
+    foreach (var handler in connections)
+    {
+        result.AppendLine(
+            $" > {(handler.IsAlive ? "[ ]" : "[x]")} [{handler.ClientName}] " +
+            $"reads: {handler.ReadsCount:0000}, " +
+            $"commands: {handler.CommandsCount:0000}, " +
+            $"received: {handler.ReadTotal:### ### ##0} bytes".PadRight(80));
+    }
+
+    result.AppendLine("-".PadRight(80, '-'));
+
+    return result.ToString();
 }
