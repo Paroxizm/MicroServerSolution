@@ -7,13 +7,15 @@ using Serilog;
 
 namespace MicroServer;
 
+internal record Run(int Start, int Len);
+
 public class ClientSocketHandler(
     Socket client,
     ChannelWriter<CommandDto> channel,
     Action<Socket> onConnectionHandled)
 {
     public bool IsAlive { get; private set; }
-    
+
     public static int CommandsReceived => _commandsReceived;
     private static int _commandsReceived;
 
@@ -33,7 +35,7 @@ public class ClientSocketHandler(
             IsAlive = true;
             ClientName = client.RemoteEndPoint?.ToString() ?? "<not set>";
 
-            var storage = ArrayPool<byte>.Shared.Rent(1024 * 1024*10);
+            var storage = ArrayPool<byte>.Shared.Rent(1024 * 1024 * 10);
             try
             {
                 var receiveBuffer = ArrayPool<byte>.Shared.Rent(4096);
@@ -59,9 +61,11 @@ public class ClientSocketHandler(
                         receiveBuffer
                             .AsSpan(0, gotBytes)
                             .CopyTo(storage.AsSpan(writeHead));
-                        writeHead += gotBytes;
 
-                        var (processedBytes, commandsFound) = ProcessBuffer(storage.AsSpan(readHead, writeHead));
+                        writeHead += gotBytes;
+                        
+                        var (processedBytes, commandsFound) =
+                            ProcessBuffer(storage.AsSpan(readHead, writeHead));
 
                         _commandsCount += commandsFound?.Count ?? 0;
 
@@ -70,22 +74,30 @@ public class ClientSocketHandler(
                             foreach (var range in commandsFound)
                             {
                                 Interlocked.Increment(ref _commandsReceived);
+                                try
+                                {
+                                    var slice = storage[(readHead + range.Start) .. (readHead + range.Start + range.Len)];
 
-                                var response = await ProcessCommandData(storage[range]);
-                                await client.SendAsync(response);
+                                    var response = await ProcessCommandData(slice);
+                                    
+                                    await client.SendAsync(response);
+                                }
+                                catch (Exception e)
+                                {
+                                    Console.WriteLine(e);
+                                }
                             }
                         }
 
-                        if (processedBytes == writeHead)
-                        {
-                            // обработали всё хранилище
-                            writeHead = 0;
-                            readHead = 0;
-                            storage.AsSpan().Clear();
-                            continue;
-                        }
-                        
                         readHead += processedBytes;
+
+                        if (processedBytes != writeHead && readHead != writeHead) 
+                            continue;
+                        
+                        // обработали всё хранилище
+                        writeHead = 0;
+                        readHead = 0;
+                        storage.AsSpan().Clear();
                     }
                 }
                 finally
@@ -100,7 +112,7 @@ public class ClientSocketHandler(
         }
         catch (Exception e)
         {
-            Log.Error("Error while processing client: {msg}", e.Message);
+            Log.Error(e, "Error while processing client: {msg}", e.Message);
         }
         finally
         {
@@ -142,29 +154,39 @@ public class ClientSocketHandler(
         }
     }
 
-    private static (int, ICollection<Range>?) ProcessBuffer(ReadOnlySpan<byte> buffer)
+
+    private static (int, ICollection<Run>?) ProcessBuffer(ReadOnlySpan<byte> buffer)
     {
         const byte delimiter = 0x0A;
-        var initialLength = buffer.Length;
 
         var separatorIndex = buffer.IndexOf(delimiter);
         if (separatorIndex < 0)
             return (0, null);
 
-        var foundCommands = new List<Range>();
-        var commandSlice = buffer.Slice(0, separatorIndex);
-        while (!commandSlice.IsEmpty)
-        {
-            foundCommands.Add(new Range(initialLength - buffer.Length, separatorIndex));
+        var foundCommands = new List<Run>();
 
-            buffer = buffer.Slice(Math.Min(separatorIndex + 1, buffer.Length));
+        var sourceOffset = 0;
+
+        while (!buffer.IsEmpty)
+        {
+
+            var run = new Run(sourceOffset, separatorIndex);
+            foundCommands.Add(run);
+
+            sourceOffset += separatorIndex + 1;
+
+            if (sourceOffset == buffer.Length)
+                break; // разделитель - последний символ в буфере
+
+            buffer = buffer.Slice(separatorIndex + 1);
             if (buffer.IsEmpty)
                 break;
 
             separatorIndex = buffer.IndexOf(delimiter);
-            commandSlice = buffer.Slice(0, Math.Min(separatorIndex, buffer.Length));
+            if (separatorIndex < 0)
+                break; // в буфере больше нет завершённых команд
         }
 
-        return (initialLength - buffer.Length, foundCommands);
+        return (sourceOffset, foundCommands);
     }
 }

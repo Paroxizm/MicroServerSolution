@@ -55,15 +55,13 @@ public class SimpleStore : IDisposable
 
             if (value == null)
                 return null;
-            
-            if (value.ExpireAt < DateTime.UtcNow)
-            {
-                removeAsExpired = true;
-                return null;
-               // remove here 
-            }
 
-            return value.Data;
+            if (value.ExpireAt >= DateTime.UtcNow) 
+                return value.Data;
+            
+            removeAsExpired = true;
+            return null;
+
         }
         finally
         {
