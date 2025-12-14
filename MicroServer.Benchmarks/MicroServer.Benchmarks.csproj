@@ -8,15 +8,11 @@
     </PropertyGroup>
 
     <ItemGroup>
-      <PackageReference Include="BenchmarkDotNet" Version="0.15.8" />
-      <PackageReference Include="NBomber" Version="6.1.2" />
-      <PackageReference Include="NBomber.Data" Version="6.1.1" />
+        <PackageReference Include="BenchmarkDotNet" Version="0.15.8"/>
     </ItemGroup>
 
     <ItemGroup>
-      <None Update="scenario-config.json">
-        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      </None>
+        <ProjectReference Include="..\MicroServer.Model\MicroServer.Model.csproj" />
     </ItemGroup>
 
 </Project>

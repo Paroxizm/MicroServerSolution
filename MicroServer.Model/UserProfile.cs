@@ -1,6 +1,7 @@
 ﻿namespace MicroServer.Model;
 
-public class UserProfile
+[GenerateBinarySerializer]
+public partial class UserProfile
 {
     public int Id { get; set; }
     public string UserName { get; set; } = string.Empty;

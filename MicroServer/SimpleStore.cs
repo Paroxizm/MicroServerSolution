@@ -1,5 +1,4 @@
-﻿using System.Text.Json;
-using MicroServer.Model;
+﻿using MicroServer.Model;
 using Serilog;
 
 namespace MicroServer;
@@ -12,7 +11,7 @@ public class SimpleStore : IDisposable
     private int _setCount;
     private int _getCount;
     private int _deleteCount;
-    
+
     public (int get, int set, int delete) GetStatistic() => (_getCount, _setCount, _deleteCount);
 
     /// <summary>
@@ -24,16 +23,21 @@ public class SimpleStore : IDisposable
     public void Set(string key, UserProfile value, int ttl = 60)
     {
         _lock.EnterWriteLock();
+
         try
         {
-            var serialized = JsonSerializer.SerializeToUtf8Bytes(value);
-            
+            //var serialized = JsonSerializer.SerializeToUtf8Bytes(value);
+
+            var stream = new MemoryStream();
+            value.SerializeToBinary(stream);
+            var serialized = stream.ToArray();
+
             _storage[key] = new CacheItem
             {
                 Data = serialized,
                 ExpireAt = DateTime.UtcNow.AddSeconds(ttl)
             };
-            
+
             Interlocked.Increment(ref _setCount);
         }
         finally
@@ -57,14 +61,15 @@ public class SimpleStore : IDisposable
             var value = _storage.GetValueOrDefault(key);
             Interlocked.Increment(ref _getCount);
 
-            if (value == null)
+            if (value?.Data == null)
                 return null;
 
             if (value.ExpireAt >= DateTime.UtcNow)
             {
                 try
                 {
-                    var profile = JsonSerializer.Deserialize<UserProfile>(value.Data);
+                    var profile = UserProfile.DeserializeFromBinary(new MemoryStream(value.Data));
+                    // JsonSerializer.Deserialize<UserProfile>(value.Data);
                     return profile;
                 }
                 catch (Exception e)
@@ -76,13 +81,12 @@ public class SimpleStore : IDisposable
 
             removeAsExpired = true;
             return null;
-
         }
         finally
         {
             _lock.ExitReadLock();
-            
-            if(removeAsExpired)
+
+            if (removeAsExpired)
                 Delete(key);
         }
     }
@@ -105,7 +109,7 @@ public class SimpleStore : IDisposable
         }
     }
 
-    #if DEBUG
+#if DEBUG
     public IReadOnlyDictionary<string, byte[]> GetAll()
     {
         _lock.EnterReadLock();
@@ -114,8 +118,8 @@ public class SimpleStore : IDisposable
             return _storage
                 .Select(x => x)
                 .ToDictionary(
-                    x => x.Key, 
-                    x => x.Value.Data != null 
+                    x => x.Key,
+                    x => x.Value.Data != null
                         ? (byte[])x.Value.Data.Clone()
                         : []);
         }
@@ -124,7 +128,7 @@ public class SimpleStore : IDisposable
             _lock.ExitReadLock();
         }
     }
-    #endif
+#endif
 
     /// <inheritdoc />
     public void Dispose()
