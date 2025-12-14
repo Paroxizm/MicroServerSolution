@@ -1,4 +1,5 @@
 ﻿using System.Text;
+using System.Text.Json;
 using System.Threading.Channels;
 using MicroServer.Model;
 using Serilog;
@@ -70,6 +71,8 @@ internal class StorageClient(
                     {
                         Interlocked.Increment(ref FailCommands);
                         command.SourceTask?.SetResult(BadFormatAnswer);
+                        
+                        Console.WriteLine(JsonSerializer.Serialize(command));
                     }
                     else
                     {
@@ -88,11 +91,8 @@ internal class StorageClient(
         }
         finally
         {
-            if (_readTask != null)
-            {
-                if(_readTask.IsCompleted)
-                    _readTask.Dispose();
-            }
+            if (_readTask is { IsCompleted: true }) 
+                _readTask.Dispose();
         }
     }
 

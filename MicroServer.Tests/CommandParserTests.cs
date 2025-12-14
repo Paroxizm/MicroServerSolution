@@ -200,7 +200,7 @@ public abstract class CommandSamples : IEnumerable<object[]>
     internal static readonly List<string[]> CorrectSetCommands =
     [
         ["SET KEY1 6 VALUE1 1", "SET", "KEY1", "6", "VALUE1", "1"],
-        ["SET KEY2 10 VALUE2 EXT 100", "SET", "KEY2", "10", "VALUE2 EXT", "100"],
+        ["SET KEY2 10 VALUE2 EXT 100", "SET", "KEY2", "10", "VALUE2 EXT", "100"]
         
     ];
 

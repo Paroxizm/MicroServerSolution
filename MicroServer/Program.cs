@@ -1,6 +1,4 @@
-﻿// See https://aka.ms/new-console-template for more information
-
-using System.Text;
+﻿using System.Text;
 using System.Threading.Channels;
 using MicroServer;
 using MicroServer.Model;
@@ -54,6 +52,7 @@ try
         try
         {
             listener.Cleanup();
+            Console.Clear();
             Console.SetCursorPosition(0, 0);
             Console.WriteLine(FormatStatus(listener, address, port, storageClients, storage));
             await Task.Delay(2000, tokenSource.Token);

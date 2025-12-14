@@ -1,12 +1,11 @@
 ﻿using FluentAssertions;
-using Xunit.Abstractions;
 
 namespace MicroServer.Tests;
 
 /// <summary>
 /// Тесты хранилища (<see cref="SimpleStore"/>)
 /// </summary>
-public class SimpleStoreTests(ITestOutputHelper logger)
+public class SimpleStoreTests
 {
     private class TaskCountVariations : TheoryData<int, int, int>
     {
@@ -32,7 +31,7 @@ public class SimpleStoreTests(ITestOutputHelper logger)
         
     }
     
-    private List<Task> CreateTasks(SimpleStore storage, int getTasks, int setTasks, int removeTasks)
+    private static List<Task> CreateTasks(SimpleStore storage, int getTasks, int setTasks, int removeTasks)
     {
         var tasks = new List<Task>();
 

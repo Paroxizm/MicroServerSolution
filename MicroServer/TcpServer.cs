@@ -52,7 +52,7 @@ public class TcpServer(
         }
     }
 
-    private void OnConnectionHandled(Socket clientSocket)
+    private static void OnConnectionHandled(Socket clientSocket)
     {
         try
         {
