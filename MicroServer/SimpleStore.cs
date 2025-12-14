@@ -1,4 +1,6 @@
-﻿using MicroServer.Model;
+﻿using System.Text.Json;
+using MicroServer.Model;
+using Serilog;
 
 namespace MicroServer;
 
@@ -10,7 +12,7 @@ public class SimpleStore : IDisposable
     private int _setCount;
     private int _getCount;
     private int _deleteCount;
-
+    
     public (int get, int set, int delete) GetStatistic() => (_getCount, _setCount, _deleteCount);
 
     /// <summary>
@@ -19,14 +21,16 @@ public class SimpleStore : IDisposable
     /// <param name="key"></param>
     /// <param name="value"></param>
     /// <param name="ttl"></param>
-    public void Set(string key, byte[] value, int ttl = 60)
+    public void Set(string key, UserProfile value, int ttl = 60)
     {
         _lock.EnterWriteLock();
         try
         {
+            var serialized = JsonSerializer.SerializeToUtf8Bytes(value);
+            
             _storage[key] = new CacheItem
             {
-                Data = value,
+                Data = serialized,
                 ExpireAt = DateTime.UtcNow.AddSeconds(ttl)
             };
             
@@ -44,7 +48,7 @@ public class SimpleStore : IDisposable
     /// <param name="key"></param>
     /// <returns></returns>
     /// <exception cref="NotImplementedException"></exception>
-    public byte[]? Get(string key)
+    public UserProfile? Get(string key)
     {
         var removeAsExpired = false;
         _lock.EnterReadLock();
@@ -56,9 +60,20 @@ public class SimpleStore : IDisposable
             if (value == null)
                 return null;
 
-            if (value.ExpireAt >= DateTime.UtcNow) 
-                return value.Data;
-            
+            if (value.ExpireAt >= DateTime.UtcNow)
+            {
+                try
+                {
+                    var profile = JsonSerializer.Deserialize<UserProfile>(value.Data);
+                    return profile;
+                }
+                catch (Exception e)
+                {
+                    Log.Error("Item deserialization error: {msg}", e.Message);
+                    return null;
+                }
+            }
+
             removeAsExpired = true;
             return null;
 

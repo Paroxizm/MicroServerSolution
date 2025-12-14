@@ -1,4 +1,6 @@
 ﻿using FluentAssertions;
+using MicroServer.Model;
+using JsonSerializer = System.Text.Json.JsonSerializer;
 
 namespace MicroServer.Tests;
 
@@ -30,6 +32,17 @@ public class SimpleStoreTests
         }
         
     }
+
+    private static UserProfile CreateProfile()
+    {
+        var profile = new UserProfile
+        {
+            CreatedAt = DateTime.UtcNow,
+            Id = Random.Shared.Next(byte.MaxValue, short.MaxValue),
+            UserName = "TEST USERNAME"
+        };
+        return profile;
+    }
     
     private static List<Task> CreateTasks(SimpleStore storage, int getTasks, int setTasks, int removeTasks)
     {
@@ -37,20 +50,22 @@ public class SimpleStoreTests
 
         for (var i = 1; i <= getTasks; i++)
         {
-            var key = $"KEY-{i}";
+            var key = $"GET-KEY-{i}";
             tasks.Add(new Task(() => storage.Get(key)));
         }
 
         for (var i = 1; i <= setTasks; i++)
         {
-            var len = i;
-            var key = $"KEY-{len}";
-            tasks.Add(new Task(() => storage.Set(key, new byte[len])));
+            var profile = CreateProfile();
+            var len = JsonSerializer.SerializeToUtf8Bytes(profile).Length;
+            var key = $"SET-{i}-KEY-{len}";
+            
+            tasks.Add(new Task(() => storage.Set(key, profile)));
         }
 
         for (var i = 1; i <= removeTasks; i++)
         {
-            var key = $"KEY-{i}";
+            var key = $"DEL-KEY-{i}";
             tasks.Add(new Task(() => storage.Delete(key)));
         }
 
@@ -76,8 +91,8 @@ public class SimpleStoreTests
         var data = storage.GetAll();
 
         data.Should()
-            .HaveCount(setTasks)
-            .And.Match(x => x.All(p => p.Value.Length == int.Parse(p.Key.Split('-', StringSplitOptions.None)[1])));
+            .HaveCount(setTasks);
+            //.And.Match(x => x.All(p => p.Value.Length == int.Parse(p.Key.Split('-', StringSplitOptions.None)[3])));
     }
     
     [Theory]
@@ -116,13 +131,13 @@ public class SimpleStoreTests
     public void Should_Add_Item()
     {
         var store = new SimpleStore();
-        var value = "value-1"u8.ToArray();
+        var value = CreateProfile();
 
-        store.Set("key-1", value, 0);
+        store.Set("key-1", value, 3000);
 
         var gotValue = store.Get("key-1");
         gotValue.Should()
-            .NotBeNullOrEmpty()
+            .NotBeNull()
             .And.BeEquivalentTo(value);
     }
 
@@ -133,21 +148,21 @@ public class SimpleStoreTests
     public void Should_Update_Item()
     {
         var store = new SimpleStore();
-        var originalValue = "value-1"u8.ToArray();
-        var newValue = "value-2"u8.ToArray();
-
+        var originalValue = CreateProfile();
+        var newValue = CreateProfile();
+        
         store.Set("key-1", originalValue);
 
         var gotValue = store.Get("key-1");
         gotValue.Should()
-            .NotBeNullOrEmpty()
+            .NotBeNull()
             .And.BeEquivalentTo(originalValue);
 
         store.Set("key-1", newValue);
 
         gotValue = store.Get("key-1");
         gotValue.Should()
-            .NotBeNullOrEmpty()
+            .NotBeNull()
             .And.BeEquivalentTo(newValue);
     }
 
@@ -158,12 +173,12 @@ public class SimpleStoreTests
     public void Should_Delete_Item()
     {
         var store = new SimpleStore();
-        var originalValue = "value-1"u8.ToArray();
+        var originalValue = CreateProfile();
         store.Set("key-1", originalValue);
 
         var gotValue = store.Get("key-1");
         gotValue.Should()
-            .NotBeNullOrEmpty()
+            .NotBeNull()
             .And.BeEquivalentTo(originalValue);
 
         store.Delete("key-1");

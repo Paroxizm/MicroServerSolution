@@ -18,7 +18,7 @@ internal class StorageClient(
 {
     private Task? _readTask;
     private CancellationToken _cancellationToken = CancellationToken.None;
-
+    
     public void Start(CancellationToken cancellationToken)
     {
         _cancellationToken = cancellationToken;
@@ -32,17 +32,20 @@ internal class StorageClient(
     /// <summary>
     /// Количество чтений из канала
     /// </summary>
-    public int ReadCommands;
-    
+    public int ReadCommands => _readCommands;
+    private int _readCommands;
+
     /// <summary>
     /// Количество успешно обработанных команд
     /// </summary>
-    public int GoodCommands;
-    
+    public int GoodCommands => _goodCommands;
+    private int _goodCommands;
+
     /// <summary>
     /// Количество сбоев (неправильная команда или ошибка обработки)
     /// </summary>
-    public int FailCommands;
+    public int FailCommands => _failCommands;
+    private int _failCommands;
 
     private async Task DoReading()
     {
@@ -55,13 +58,13 @@ internal class StorageClient(
                 {
                     command = await channel.Reader.ReadAsync(_cancellationToken);
 
-                    Interlocked.Increment(ref ReadCommands);
-                    
+                    Interlocked.Increment(ref _readCommands);
+
                     var result = command.Command switch
                     {
                         CommandType.None => null,
-                        CommandType.Get => storage.Get(command.Key) ?? EmptyAnswer,
-                        CommandType.Set => SetInStorage(command.Key, command.Data?.ToArray() ?? [], command.Ttl),
+                        CommandType.Get => GetFromStorage(command.Key) ?? EmptyAnswer,
+                        CommandType.Set => SetInStorage(command.Key, command.Data, command.Ttl),
                         CommandType.Delete => DeleteFromStorage(command.Key),
                         CommandType.Stat => GetStorageStatistic(),
                         _ => null
@@ -69,29 +72,29 @@ internal class StorageClient(
 
                     if (result == null)
                     {
-                        Interlocked.Increment(ref FailCommands);
+                        Interlocked.Increment(ref _failCommands);
                         command.SourceTask?.SetResult(BadFormatAnswer);
-                        
+
                         Console.WriteLine(JsonSerializer.Serialize(command));
                     }
                     else
                     {
-                        Interlocked.Increment(ref GoodCommands);
+                        Interlocked.Increment(ref _goodCommands);
                         command.SourceTask?.SetResult(result);
                     }
                 }
                 catch (Exception e)
                 {
                     Log.Error(e, "StorageClient error: {msg}", e.Message);
-                    Interlocked.Increment(ref FailCommands);
-                    
+                    Interlocked.Increment(ref _failCommands);
+
                     command?.SourceTask?.SetException([e]);
                 }
             }
         }
         finally
         {
-            if (_readTask is { IsCompleted: true }) 
+            if (_readTask is { IsCompleted: true })
                 _readTask.Dispose();
         }
     }
@@ -108,10 +111,21 @@ internal class StorageClient(
         return OkAnswer;
     }
 
-    private byte[] SetInStorage(string key, byte[] value, int ttl)
+    private byte[] SetInStorage(string key, UserProfile? profile, int ttl)
     {
-        storage.Set(key, value, ttl);
+        if (profile == null)
+            return BadFormatAnswer;
+
+        storage.Set(key, profile, ttl);
         return OkAnswer;
+    }
+
+    private byte[]? GetFromStorage(string key)
+    {
+        var profile = storage.Get(key);
+        return profile == null
+            ? null
+            : JsonSerializer.SerializeToUtf8Bytes(profile);
     }
 
     /// <inheritdoc />
