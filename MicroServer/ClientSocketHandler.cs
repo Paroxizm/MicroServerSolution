@@ -1,6 +1,7 @@
 ﻿using System.Buffers;
 using System.Net.Sockets;
 using System.Text;
+using System.Text.Json;
 using System.Threading.Channels;
 using MicroServer.Model;
 using Serilog;
@@ -128,6 +129,11 @@ public class ClientSocketHandler(
             var commandStruct = CommandParser.Parse(bytes.AsSpan());
             var tcs = new TaskCompletionSource<byte[]>();
 
+            
+            var profile = commandStruct.Data.IsEmpty 
+                ? null 
+                : JsonSerializer.Deserialize<UserProfile>(commandStruct.Data);
+            
             var commandDto = new CommandDto
             {
                 Command = Enum.TryParse<CommandType>(
@@ -136,7 +142,7 @@ public class ClientSocketHandler(
                     ? type
                     : CommandType.None,
                 Key = Encoding.UTF8.GetString(commandStruct.Key).Trim(),
-                Data = commandStruct.Data.ToArray(),
+                Data = profile,
                 Ttl = int.TryParse(Encoding.UTF8.GetString(commandStruct.Ttl).Trim(), out var ttl) ? ttl : 60,
                 SourceTask = tcs
             };

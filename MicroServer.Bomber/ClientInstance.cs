@@ -2,6 +2,8 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace MicroServer.Bomber;
 
@@ -98,12 +100,28 @@ public class ClientInstance
         return Encoding.UTF8.GetBytes($"GET K-{p:0000}{(char)0x0A}");
     }
 
+    private class UserProfileDto
+    {
+        [JsonInclude]
+        public int Id { get; set; }
+        
+        [JsonInclude]
+        public string UserName { get; set; } = string.Empty;
+        
+        [JsonInclude]
+        public DateTime CreatedAt { get; set; }
+    }
+    
     private static byte[] CreateSetCommand(int minLength, int maxLength, int p, int ttl)
     {
-        var payload = Enumerable
-            .Range(0, Random.Shared.Next(minLength, maxLength))
-            .Select(x => x.ToString("X2"))
-            .Aggregate("", (c, n) => c + n);
+        var profile = new UserProfileDto
+        {
+            CreatedAt = DateTime.UtcNow,
+            Id = Random.Shared.Next(minLength, maxLength),
+            UserName = "BOMBER USER"
+        };
+        
+        var payload = JsonSerializer.Serialize(profile);
 
         return Encoding.UTF8.GetBytes($"SET K-{p:0000} {payload.Length} {payload} {ttl}{(char)0x0A}");
     }
