@@ -4,7 +4,7 @@ using NBomber.CSharp;
 
 namespace MicroServer.Bomber;
 
-public class Bomber
+public static class Bomber
 {
     public class CustomScenarioSettings
     {
