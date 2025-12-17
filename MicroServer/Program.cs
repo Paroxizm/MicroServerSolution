@@ -3,6 +3,7 @@ using System.Threading.Channels;
 using MicroServer;
 using MicroServer.Model;
 using Serilog;
+using Serilog.Sinks.OpenTelemetry;
 
 // адрес сервера 
 var address = args.FirstOrDefault(x => x.StartsWith("--address"))?.Split('=')[1] ?? "127.0.0.1";
@@ -11,17 +12,48 @@ var port = int.Parse(args.FirstOrDefault(x => x.StartsWith("--port"))?.Split('='
 // количество параллельных писателей в хранилище 
 var storageClientsCount = int.Parse(args.FirstOrDefault(x => x.StartsWith("--storage-clients"))?.Split('=')[1] ?? "5");
 
+// максимальное количество одновременных подключений
+var maxConcurrentConnections = int.Parse(args.FirstOrDefault(x => x.StartsWith("--mcc"))?.Split('=')[1] ?? "5");
+// максимальное количество одновременных подключений
+var maxCommandSize = int.Parse(args.FirstOrDefault(x => x.StartsWith("--mcs"))?.Split('=')[1] ?? "4096");
+
+// максимальное количество одновременных подключений
+var otelServer = args.FirstOrDefault(x => x.StartsWith("--otel"))?.Split('=')[1] ?? "http://localhost:4317";
+
+var useOtel = !string.IsNullOrEmpty(otelServer) && otelServer.ToLowerInvariant() is not "false" and not "no";
+
 Console.Title = $"MicroServer at [{address}:{port}]";
 
-Log.Logger = new LoggerConfiguration()
+if(useOtel)
+    Telemetry.Start(otelServer, "micro-server");
+
+var loggerConf = new LoggerConfiguration()
     .MinimumLevel.Debug()
     .WriteTo.File("log.txt", rollingInterval: RollingInterval.Day)
-    .WriteTo.Debug()
-    .CreateLogger();
+    .WriteTo.Debug();
+
+if(useOtel)
+    loggerConf
+    .WriteTo.OpenTelemetry(options =>
+    {
+        options.Endpoint = otelServer;
+        options.Protocol = OtlpProtocol.Grpc;
+        options.ResourceAttributes = new Dictionary<string, object>
+        {
+            ["service.name"] = "micro-server",
+            ["service.instance.id"] = "core",
+            ["service.version"] = "1.0.0"
+        };
+    });
+    
+
+Log.Logger = loggerConf.CreateLogger();
 
 Log.Information("Server starting with:");
 Log.Information(" - address: [{address}]", address);
 Log.Information(" - port: [{port}]", port);
+Log.Information(" - mcc: [{mcc}]", maxConcurrentConnections);
+Log.Information(" - mcs: [{mcs}]", maxCommandSize);
 
 var tokenSource = new CancellationTokenSource();
 
@@ -33,16 +65,20 @@ var storageClients =
         .Select(_ => new StorageClient(storage, channel))
         .ToList();
 
-Parallel.ForEach(storageClients, client => client.Start(tokenSource.Token));
+Parallel.ForEach(storageClients, client =>
+{
+    client.Start(tokenSource.Token);
+    Telemetry.CommandProcessed();
+});
 
 try
 {
-    var listener = new TcpServer(channel.Writer, address, port);
+    var listener = new TcpServer(channel.Writer, address, port, maxConcurrentConnections, maxCommandSize);
 
     _ = listener.StartAsync(tokenSource.Token);
 
-    Log.Information("MicroServer is started");
-
+    Log.Information("MicroServer started");
+    
     while (!tokenSource.IsCancellationRequested)
     {
         if (Console.KeyAvailable
@@ -52,9 +88,13 @@ try
         try
         {
             listener.Cleanup();
-            Console.Clear();
-            Console.SetCursorPosition(0, 0);
-            Console.WriteLine(FormatStatus(listener, address, port, storageClients, storage));
+            if (!useOtel)
+            {
+                Console.Clear();
+                Console.SetCursorPosition(0, 0);
+                Console.WriteLine(FormatStatus(listener, address, port, storageClients, storage));
+            }
+
             await Task.Delay(2000, tokenSource.Token);
         }
         catch (OperationCanceledException)
@@ -84,6 +124,7 @@ finally
 {
     Log.Information("MicroServer is stopped");
     Log.CloseAndFlush();
+    Telemetry.Stop();
 }
 
 return 0;
