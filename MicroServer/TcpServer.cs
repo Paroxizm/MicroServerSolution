@@ -28,6 +28,9 @@ public class TcpServer(
             {
                 var clientSocket = await _socket.AcceptAsync(cancellationToken);
 
+                Telemetry.ClientsAccepted();
+                
+                Telemetry.ClientConnected();
                 var handler = new ClientSocketHandler(clientSocket, writer, OnConnectionHandled);
                 _handlers.AddHandler(handler);
 
@@ -63,6 +66,10 @@ public class TcpServer(
         catch (Exception e)
         {
             Console.WriteLine("Error on complete socket: " + e.Message);
+        }
+        finally
+        {
+            Telemetry.ClientDisconnected();
         }
     }
     

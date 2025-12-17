@@ -1,8 +1,12 @@
-﻿using System.Text;
+﻿using System.Diagnostics;
+using System.Text;
 using System.Threading.Channels;
 using MicroServer;
 using MicroServer.Model;
+using OpenTelemetry;
+using OpenTelemetry.Trace;
 using Serilog;
+using Serilog.Sinks.OpenTelemetry;
 
 // адрес сервера 
 var address = args.FirstOrDefault(x => x.StartsWith("--address"))?.Split('=')[1] ?? "127.0.0.1";
@@ -13,10 +17,23 @@ var storageClientsCount = int.Parse(args.FirstOrDefault(x => x.StartsWith("--sto
 
 Console.Title = $"MicroServer at [{address}:{port}]";
 
+Telemetry.Start("http://localhost:4317", "micro-server");
+
 Log.Logger = new LoggerConfiguration()
     .MinimumLevel.Debug()
     .WriteTo.File("log.txt", rollingInterval: RollingInterval.Day)
     .WriteTo.Debug()
+    .WriteTo.OpenTelemetry(options =>
+    {
+        options.Endpoint = "http://localhost:4317";
+        options.Protocol = OtlpProtocol.Grpc;
+        options.ResourceAttributes = new Dictionary<string, object>
+        {
+            ["service.name"] = "micro-server",
+            ["service.instance.id"] = "core",
+            ["service.version"] = "1.0.0"
+        };
+    })
     .CreateLogger();
 
 Log.Information("Server starting with:");
@@ -33,10 +50,19 @@ var storageClients =
         .Select(_ => new StorageClient(storage, channel))
         .ToList();
 
-Parallel.ForEach(storageClients, client => client.Start(tokenSource.Token));
+Parallel.ForEach(storageClients, client =>
+{
+    client.Start(tokenSource.Token);
+    Telemetry.CommandProcessed();
+});
+
+
+//activity?.Stop();
 
 try
 {
+    DoWork();
+    
     var listener = new TcpServer(channel.Writer, address, port);
 
     _ = listener.StartAsync(tokenSource.Token);
@@ -84,6 +110,7 @@ finally
 {
     Log.Information("MicroServer is stopped");
     Log.CloseAndFlush();
+    Telemetry.Stop();
 }
 
 return 0;
@@ -95,6 +122,8 @@ static string FormatStatus(
     List<StorageClient> storageClients,
     SimpleStore storage)
 {
+    Telemetry.CommandProcessed();
+    
     var result = new StringBuilder();
     result.AppendLine("-".PadRight(80, '-'));
 
@@ -130,4 +159,22 @@ static string FormatStatus(
     result.AppendLine("-".PadRight(80, '-'));
 
     return result.ToString();
+}
+
+
+void DoWork()
+{
+    using var act = Telemetry.StartActivity("DoWork");
+
+    act?.SetTag("custom.tag", "value");
+    act?.SetTag("operation.id", Guid.NewGuid());
+
+    // имитация работы
+    using (var child = Telemetry.StartActivity("ChildOperation"))
+    {
+        child?.SetTag("child.step", 1);
+        Thread.Sleep(100);
+    }
+
+    Thread.Sleep(50);
 }

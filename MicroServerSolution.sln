@@ -17,6 +17,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Runs", "Runs", "{748CFCB5-5
 		_Start-Apps.ps1 = _Start-Apps.ps1
 		run-single-slow.ps1 = run-single-slow.ps1
 		run-multiple-fast.ps1 = run-multiple-fast.ps1
+		run-aspire.cmd = run-aspire.cmd
 	EndProjectSection
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MicroServer.Bomber", "MicroServer.Bomber\MicroServer.Bomber.csproj", "{50CADDD0-F4AA-4054-99DA-034B49BB0672}"

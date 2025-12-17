@@ -1,4 +1,5 @@
 ﻿using System.Buffers;
+using System.Diagnostics;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
@@ -44,6 +45,7 @@ public class ClientSocketHandler(
                 {
                     var writeHead = 0;
                     var readHead = 0;
+
                     while (!token.IsCancellationRequested)
                     {
                         receiveBuffer.AsSpan().Clear();
@@ -64,7 +66,7 @@ public class ClientSocketHandler(
                             .CopyTo(storage.AsSpan(writeHead));
 
                         writeHead += gotBytes;
-                        
+
                         var (processedBytes, commandsFound) =
                             ProcessBuffer(storage.AsSpan(readHead, writeHead));
 
@@ -77,10 +79,10 @@ public class ClientSocketHandler(
                                 Interlocked.Increment(ref _commandsReceived);
                                 try
                                 {
-                                    var slice = storage[(readHead + range.Start) .. (readHead + range.Start + range.Len)];
+                                    var slice = storage[
+                                        (readHead + range.Start) .. (readHead + range.Start + range.Len)];
 
                                     var response = await ProcessCommandData(slice);
-                                    
                                     await client.SendAsync(response);
                                 }
                                 catch (Exception e)
@@ -92,9 +94,9 @@ public class ClientSocketHandler(
 
                         readHead += processedBytes;
 
-                        if (processedBytes != writeHead && readHead != writeHead) 
+                        if (processedBytes != writeHead && readHead != writeHead)
                             continue;
-                        
+
                         // обработали всё хранилище
                         writeHead = 0;
                         readHead = 0;
@@ -124,23 +126,35 @@ public class ClientSocketHandler(
 
     private async Task<byte[]> ProcessCommandData(byte[] bytes)
     {
+        using var activity = Telemetry.StartActivity("command");
+        var stopWatch = new Stopwatch();
+
+        stopWatch.Start();
+
+        var command = CommandType.None;
+        var dataLength = 0;
+
         try
         {
             var commandStruct = CommandParser.Parse(bytes.AsSpan());
             var tcs = new TaskCompletionSource<byte[]>();
 
-            
-            var profile = commandStruct.Data.IsEmpty 
-                ? null 
+
+            dataLength = commandStruct.Data.Length;
+
+            var profile = commandStruct.Data.IsEmpty
+                ? null
                 : JsonSerializer.Deserialize<UserProfile>(commandStruct.Data);
-            
+
+            command = Enum.TryParse<CommandType>(
+                Encoding.UTF8.GetString(commandStruct.Command),
+                true, out var type)
+                ? type
+                : CommandType.None;
+
             var commandDto = new CommandDto
             {
-                Command = Enum.TryParse<CommandType>(
-                    Encoding.UTF8.GetString(commandStruct.Command),
-                    true, out var type)
-                    ? type
-                    : CommandType.None,
+                Command = command,
                 Key = Encoding.UTF8.GetString(commandStruct.Key).Trim(),
                 Data = profile,
                 Ttl = int.TryParse(Encoding.UTF8.GetString(commandStruct.Ttl).Trim(), out var ttl) ? ttl : 60,
@@ -157,6 +171,16 @@ public class ClientSocketHandler(
         {
             Console.WriteLine(e);
             return "-ERRInternalError"u8.ToArray();
+        }
+        finally
+        {
+            stopWatch.Stop();
+            Telemetry.CommandProcessed();
+            Telemetry.AddCommandDuration(stopWatch.Elapsed.TotalMicroseconds);
+
+            activity?.SetTag("command.duration", stopWatch.Elapsed.TotalMicroseconds);
+            activity?.SetTag("command.name", command.ToString());
+            activity?.SetTag("command.data.length", dataLength);
         }
     }
 
@@ -175,7 +199,6 @@ public class ClientSocketHandler(
 
         while (!buffer.IsEmpty)
         {
-
             var run = new Run(sourceOffset, separatorIndex);
             foundCommands.Add(run);
 
