@@ -1,10 +1,7 @@
-﻿using System.Diagnostics;
-using System.Text;
+﻿using System.Text;
 using System.Threading.Channels;
 using MicroServer;
 using MicroServer.Model;
-using OpenTelemetry;
-using OpenTelemetry.Trace;
 using Serilog;
 using Serilog.Sinks.OpenTelemetry;
 
@@ -15,17 +12,31 @@ var port = int.Parse(args.FirstOrDefault(x => x.StartsWith("--port"))?.Split('='
 // количество параллельных писателей в хранилище 
 var storageClientsCount = int.Parse(args.FirstOrDefault(x => x.StartsWith("--storage-clients"))?.Split('=')[1] ?? "5");
 
+// максимальное количество одновременных подключений
+var maxConcurrentConnections = int.Parse(args.FirstOrDefault(x => x.StartsWith("--mcc"))?.Split('=')[1] ?? "5");
+// максимальное количество одновременных подключений
+var maxCommandSize = int.Parse(args.FirstOrDefault(x => x.StartsWith("--mcs"))?.Split('=')[1] ?? "4096");
+
+// максимальное количество одновременных подключений
+var otelServer = args.FirstOrDefault(x => x.StartsWith("--otel"))?.Split('=')[1] ?? "http://localhost:4317";
+
+var useOtel = !string.IsNullOrEmpty(otelServer) && otelServer.ToLowerInvariant() is not "false" and not "no";
+
 Console.Title = $"MicroServer at [{address}:{port}]";
 
-Telemetry.Start("http://localhost:4317", "micro-server");
+if(useOtel)
+    Telemetry.Start(otelServer, "micro-server");
 
-Log.Logger = new LoggerConfiguration()
+var loggerConf = new LoggerConfiguration()
     .MinimumLevel.Debug()
     .WriteTo.File("log.txt", rollingInterval: RollingInterval.Day)
-    .WriteTo.Debug()
+    .WriteTo.Debug();
+
+if(useOtel)
+    loggerConf
     .WriteTo.OpenTelemetry(options =>
     {
-        options.Endpoint = "http://localhost:4317";
+        options.Endpoint = otelServer;
         options.Protocol = OtlpProtocol.Grpc;
         options.ResourceAttributes = new Dictionary<string, object>
         {
@@ -33,12 +44,16 @@ Log.Logger = new LoggerConfiguration()
             ["service.instance.id"] = "core",
             ["service.version"] = "1.0.0"
         };
-    })
-    .CreateLogger();
+    });
+    
+
+Log.Logger = loggerConf.CreateLogger();
 
 Log.Information("Server starting with:");
 Log.Information(" - address: [{address}]", address);
 Log.Information(" - port: [{port}]", port);
+Log.Information(" - mcc: [{mcc}]", maxConcurrentConnections);
+Log.Information(" - mcs: [{mcs}]", maxCommandSize);
 
 var tokenSource = new CancellationTokenSource();
 
@@ -56,19 +71,14 @@ Parallel.ForEach(storageClients, client =>
     Telemetry.CommandProcessed();
 });
 
-
-//activity?.Stop();
-
 try
 {
-    DoWork();
-    
-    var listener = new TcpServer(channel.Writer, address, port);
+    var listener = new TcpServer(channel.Writer, address, port, maxConcurrentConnections, maxCommandSize);
 
     _ = listener.StartAsync(tokenSource.Token);
 
-    Log.Information("MicroServer is started");
-
+    Log.Information("MicroServer started");
+    
     while (!tokenSource.IsCancellationRequested)
     {
         if (Console.KeyAvailable
@@ -78,9 +88,13 @@ try
         try
         {
             listener.Cleanup();
-            Console.Clear();
-            Console.SetCursorPosition(0, 0);
-            Console.WriteLine(FormatStatus(listener, address, port, storageClients, storage));
+            if (!useOtel)
+            {
+                Console.Clear();
+                Console.SetCursorPosition(0, 0);
+                Console.WriteLine(FormatStatus(listener, address, port, storageClients, storage));
+            }
+
             await Task.Delay(2000, tokenSource.Token);
         }
         catch (OperationCanceledException)
@@ -122,8 +136,6 @@ static string FormatStatus(
     List<StorageClient> storageClients,
     SimpleStore storage)
 {
-    Telemetry.CommandProcessed();
-    
     var result = new StringBuilder();
     result.AppendLine("-".PadRight(80, '-'));
 
@@ -159,22 +171,4 @@ static string FormatStatus(
     result.AppendLine("-".PadRight(80, '-'));
 
     return result.ToString();
-}
-
-
-void DoWork()
-{
-    using var act = Telemetry.StartActivity("DoWork");
-
-    act?.SetTag("custom.tag", "value");
-    act?.SetTag("operation.id", Guid.NewGuid());
-
-    // имитация работы
-    using (var child = Telemetry.StartActivity("ChildOperation"))
-    {
-        child?.SetTag("child.step", 1);
-        Thread.Sleep(100);
-    }
-
-    Thread.Sleep(50);
 }

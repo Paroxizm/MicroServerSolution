@@ -14,7 +14,8 @@ internal record Run(int Start, int Len);
 public class ClientSocketHandler(
     Socket client,
     ChannelWriter<CommandDto> channel,
-    Action<Socket> onConnectionHandled)
+    int maxCommandSize,
+    Action<Socket,bool> onConnectionHandled)
 {
     public bool IsAlive { get; private set; }
 
@@ -32,6 +33,7 @@ public class ClientSocketHandler(
 
     public async Task StartClientAsync(CancellationToken token)
     {
+        var disconnectedByServer = false;
         try
         {
             IsAlive = true;
@@ -82,6 +84,13 @@ public class ClientSocketHandler(
                                     var slice = storage[
                                         (readHead + range.Start) .. (readHead + range.Start + range.Len)];
 
+                                    if (slice.Length >= maxCommandSize)
+                                    {
+                                        Log.Information("Client [{addr}] command tool long, disconnected", ClientName);
+                                        disconnectedByServer = true;
+                                        break;
+                                    }
+
                                     var response = await ProcessCommandData(slice);
                                     await client.SendAsync(response);
                                 }
@@ -120,7 +129,7 @@ public class ClientSocketHandler(
         finally
         {
             IsAlive = false;
-            onConnectionHandled(client);
+            onConnectionHandled(client, disconnectedByServer);
         }
     }
 
@@ -138,7 +147,6 @@ public class ClientSocketHandler(
         {
             var commandStruct = CommandParser.Parse(bytes.AsSpan());
             var tcs = new TaskCompletionSource<byte[]>();
-
 
             dataLength = commandStruct.Data.Length;
 

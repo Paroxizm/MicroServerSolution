@@ -38,6 +38,7 @@ public static class Telemetry
         _tracerProvider = Sdk.CreateTracerProviderBuilder()
             .AddSource("MicroServer")
             .SetResourceBuilder(resourceBuilder)
+            .AddConsoleExporter()
             .AddOtlpExporter(options => { options.Endpoint = new Uri(serverUrl); })
             .Build();
 
@@ -45,6 +46,7 @@ public static class Telemetry
         _meterProvider = Sdk.CreateMeterProviderBuilder()
             .SetResourceBuilder(resourceBuilder)
             .AddMeter("MicroServer.Metrics")
+            .AddConsoleExporter()
             .AddOtlpExporter(otlp => { otlp.Endpoint = new Uri(serverUrl); })
             .Build();
     }
@@ -87,5 +89,11 @@ public static class Telemetry
     {
         Interlocked.Decrement(ref _currentConnections);
         ActiveConnectionsCounter.Record(_currentConnections);
+    }
+    
+    public static void ClientDisconnectedByServer()
+    {
+        //Interlocked.Decrement(ref _currentConnections);
+        //ActiveConnectionsCounter.Record(_currentConnections);
     }
 }
