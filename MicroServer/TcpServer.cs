@@ -32,10 +32,10 @@ public class TcpServer(
             
             while (!cancellationToken.IsCancellationRequested)
             {
+                await _connectionLimiter.WaitAsync(cancellationToken);
+                
                 var clientSocket = await _socket.AcceptAsync(cancellationToken);
                 Telemetry.ClientsAccepted();
-                
-                await _connectionLimiter.WaitAsync(cancellationToken);
                 Telemetry.ClientConnected();
                 
                 var handler = new ClientSocketHandler(clientSocket, writer, maxCommandSize, OnConnectionHandled);
@@ -76,10 +76,11 @@ public class TcpServer(
         }
         finally
         {
+            _connectionLimiter.Release();
             Telemetry.ClientDisconnected();
             if(disconnectedByServer)
                 Telemetry.ClientDisconnectedByServer();
-            _connectionLimiter.Release();
+            
         }
     }
     
