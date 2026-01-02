@@ -9,13 +9,17 @@ namespace MicroServer;
 public class TcpServer(
     ChannelWriter<CommandDto> writer,
     string address,
-    int port)
+    int port,
+    int maxConcurrentConnections,
+    int maxCommandSize)
 {
     private Socket? _socket;
     private readonly HandlersList _handlers = new();
 
+    private readonly SemaphoreSlim _connectionLimiter = new (maxConcurrentConnections);
+    
     public List<ClientSocketHandler> GetSnapshot() => _handlers.Snapshot();
-
+    
     public async Task StartAsync(CancellationToken cancellationToken)
     {
         _socket = new Socket(IPAddress.Any.AddressFamily, SocketType.Stream, ProtocolType.IP);
@@ -24,11 +28,17 @@ public class TcpServer(
 
         try
         {
+            
+            
             while (!cancellationToken.IsCancellationRequested)
             {
+                await _connectionLimiter.WaitAsync(cancellationToken);
+                
                 var clientSocket = await _socket.AcceptAsync(cancellationToken);
-
-                var handler = new ClientSocketHandler(clientSocket, writer, OnConnectionHandled);
+                Telemetry.ClientsAccepted();
+                Telemetry.ClientConnected();
+                
+                var handler = new ClientSocketHandler(clientSocket, writer, maxCommandSize, OnConnectionHandled);
                 _handlers.AddHandler(handler);
 
                 _ = handler.StartClientAsync(cancellationToken);
@@ -52,7 +62,7 @@ public class TcpServer(
         }
     }
 
-    private static void OnConnectionHandled(Socket clientSocket)
+    private void OnConnectionHandled(Socket clientSocket, bool disconnectedByServer)
     {
         try
         {
@@ -63,6 +73,14 @@ public class TcpServer(
         catch (Exception e)
         {
             Console.WriteLine("Error on complete socket: " + e.Message);
+        }
+        finally
+        {
+            _connectionLimiter.Release();
+            Telemetry.ClientDisconnected();
+            if(disconnectedByServer)
+                Telemetry.ClientDisconnectedByServer();
+            
         }
     }
     
