@@ -18,7 +18,7 @@ public class ClientInstance
         _port = port;
         _address = IPAddress.Parse(address);
         _socket = new Socket(_address.AddressFamily, SocketType.Stream, ProtocolType.IP);
-        _socket.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.NoDelay, false);
+        _socket.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.NoDelay, true);
     }
 
     public Task ConnectAsync()
@@ -26,6 +26,8 @@ public class ClientInstance
         return _socket.ConnectAsync([_address], _port);
     }
 
+    private CancellationTokenSource _tokenSource = new();
+    
     public async Task<bool> RunDataCommand()
     {
         byte[]? commandBuffer = null;
@@ -35,21 +37,27 @@ public class ClientInstance
 
             var commandLen = CreateCommand(commandBuffer, Random.Shared.Next(100, 5000));
 
-            var sentLen = await _socket.SendAsync(commandBuffer.AsMemory(0, commandLen));
+            var sentLen = await _socket.SendAsync(commandBuffer.AsMemory(0, commandLen),
+                cancellationToken: _tokenSource.Token);
 
             if (sentLen != commandLen)
                 return false;
 
-            var received = await _socket.ReceiveAsync(commandBuffer.AsMemory(0));
+            var received = await _socket.ReceiveAsync(commandBuffer.AsMemory(0), cancellationToken: _tokenSource.Token);
 
             if (received == 0)
                 return false;
 
-            var receivedData = Encoding.UTF8.GetString(commandBuffer, 0, received);
+            //var receivedData = Encoding.UTF8.GetString(commandBuffer, 0, received);
 
-            var result = receivedData.Length > 0 && receivedData[0] != '-';
-            
-            return result;
+            //var result = receivedData.Length > 0 && receivedData[0] != '-';
+
+            return received > 0;
+        }
+        catch (OperationCanceledException)
+        {
+            // сами остановили
+            return true;
         }
         catch (Exception ex)
         {
@@ -67,9 +75,17 @@ public class ClientInstance
     {
         try
         {
+            Console.WriteLine("Clear client instance");
+            
+            if(_tokenSource.IsCancellationRequested)
+                return;
+            
+            _tokenSource.CancelAfter(TimeSpan.FromSeconds(5));
+            
             _socket.Shutdown(SocketShutdown.Both);
             _socket.Close();
             _socket.Dispose();
+            
         }
         catch (Exception e)
         {

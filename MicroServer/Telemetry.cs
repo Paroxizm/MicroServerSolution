@@ -38,7 +38,7 @@ public static class Telemetry
         _tracerProvider = Sdk.CreateTracerProviderBuilder()
             .AddSource("MicroServer")
             .SetResourceBuilder(resourceBuilder)
-            .AddConsoleExporter()
+            //.AddConsoleExporter()
             .AddOtlpExporter(options => { options.Endpoint = new Uri(serverUrl); })
             .Build();
 
@@ -46,7 +46,7 @@ public static class Telemetry
         _meterProvider = Sdk.CreateMeterProviderBuilder()
             .SetResourceBuilder(resourceBuilder)
             .AddMeter("MicroServer.Metrics")
-            .AddConsoleExporter()
+            //.AddConsoleExporter()
             .AddOtlpExporter(otlp => { otlp.Endpoint = new Uri(serverUrl); })
             .Build();
     }

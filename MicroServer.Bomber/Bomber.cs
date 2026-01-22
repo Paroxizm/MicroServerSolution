@@ -45,9 +45,17 @@ public static class Bomber
                 }
             })
             //прогрев и симуляция настроены в scenario-config.json
-            .WithClean(_ =>
+            //.WithLoadSimulations(
+            //    Simulation.KeepConstant(copies: 10, during: TimeSpan.FromSeconds(30))
+            //)
+            .WithClean(ctx =>
             {
-                clientPool.DisposeClients(client => client.Close());
+                Console.WriteLine($"Remove client: {ctx.ScenarioInfo.InstanceNumber}");
+                
+                var client = clientPool.GetClient(ctx.ScenarioInfo.InstanceNumber);
+                client.Close();
+                
+                //clientPool.DisposeClients(client => client.Close());
                 return Task.CompletedTask;
             });
 
