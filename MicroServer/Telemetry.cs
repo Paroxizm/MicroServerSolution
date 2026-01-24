@@ -24,6 +24,7 @@ public static class Telemetry
         description: "Number of active connections");
 
     private static readonly Histogram<double> DurationHistogram = Meter.CreateHistogram<double>("duration", "mcs", "Command duration in microseconds");
+    private static readonly Histogram<double> RpsHistogram = Meter.CreateHistogram<double>("rps", "rps", "Requests per second");
 
     private static TracerProvider? _tracerProvider;
     private static MeterProvider? _meterProvider;
@@ -62,9 +63,24 @@ public static class Telemetry
         return Source.StartActivity(activityName);
     }
 
+    private static DateTime _startedAt = DateTime.MinValue; 
+    private static long _totalCommands = 0; 
+    
     public static void CommandProcessed()
     {
         CommandsProcessedCounter.Add(1);
+        _totalCommands++;
+        if (_startedAt == DateTime.MinValue)
+            _startedAt = DateTime.Now;
+        else
+        {
+            var elapsed = (DateTime.Now - _startedAt).TotalMicroseconds;
+            if (!(elapsed > 0)) 
+                return;
+            
+            var rps = _totalCommands / elapsed * 1_000_000;
+            RpsHistogram.Record(rps);
+        }    
     }
 
     public static void ClientsAccepted()

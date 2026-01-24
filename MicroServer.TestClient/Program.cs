@@ -2,6 +2,8 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 // Таймаут между отправками сообщений
 var timeout = int.Parse(args.FirstOrDefault(x => x.StartsWith("--timeout"))?.Split('=')[1] ?? "5000");
@@ -129,17 +131,43 @@ static byte[] CreateGetCommand(int p)
     return Encoding.UTF8.GetBytes($"GET K-{p:0000}\n");
 }
     
-static byte[] CreateSetCommand(int minLength, int maxLength, int p, int ttl)
+// static byte[] CreateSetCommand(int minLength, int maxLength, int p, int ttl)
+// {
+//     var payload = Enumerable
+//         .Range(0, Random.Shared.Next(minLength, maxLength))
+//         .Select(x => x.ToString("X2"))
+//         .Aggregate("", (c, n) => c + n);
+//         
+//     return Encoding.UTF8.GetBytes($"SET K-{p:0000} {payload.Length} {payload} {ttl}\n");
+// }
+
+static byte[] CreateSetCommand(int minId, int maxId, int p, int ttl)
 {
-    var payload = Enumerable
-        .Range(0, Random.Shared.Next(minLength, maxLength))
-        .Select(x => x.ToString("X2"))
-        .Aggregate("", (c, n) => c + n);
+    var profile = new UserProfileDto
+    {
+        CreatedAt = DateTime.UtcNow,
+        Id = Random.Shared.Next(minId, maxId),
+        UserName = "BOMBER USER"
+    };
         
-    return Encoding.UTF8.GetBytes($"SET K-{p:0000} {payload.Length} {payload} {ttl}\n");
+    var payload = JsonSerializer.Serialize(profile);
+
+    return Encoding.UTF8.GetBytes($"SET K-{p:0000} {payload.Length} {payload} {ttl}{(char)0x0A}");
 }
-    
+
 static byte[] CreateDeleteCommand(int p)
 {
     return Encoding.UTF8.GetBytes($"DELETE K-{p:0000}\n");
+}
+
+internal class UserProfileDto
+{
+    [JsonInclude]
+    public int Id { get; set; }
+        
+    [JsonInclude]
+    public string UserName { get; set; } = string.Empty;
+        
+    [JsonInclude]
+    public DateTime CreatedAt { get; set; }
 }

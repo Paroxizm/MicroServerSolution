@@ -1,4 +1,6 @@
-﻿using System.Buffers;
+﻿#define _USE_TRACING
+
+using System.Buffers;
 using System.Diagnostics;
 using System.Net.Sockets;
 using System.Text;
@@ -135,20 +137,30 @@ public class ClientSocketHandler(
 
     private async Task<byte[]> ProcessCommandData(byte[] bytes)
     {
+        #if USE_TRACING
         using var activity = Telemetry.StartActivity("command");
+        var dataLength = 0;
+        #endif
+        
         var stopWatch = new Stopwatch();
 
         stopWatch.Start();
 
+        #if USE_TRACING
         var command = CommandType.None;
-        var dataLength = 0;
+        #else
+        CommandType command;
+        #endif
+        
 
         try
         {
             var commandStruct = CommandParser.Parse(bytes.AsSpan());
             var tcs = new TaskCompletionSource<byte[]>();
 
+            #if USE_TRACING
             dataLength = commandStruct.Data.Length;
+            #endif
 
             var profile = commandStruct.Data.IsEmpty
                 ? null
@@ -186,9 +198,11 @@ public class ClientSocketHandler(
             Telemetry.CommandProcessed();
             Telemetry.AddCommandDuration(stopWatch.Elapsed.TotalMicroseconds);
 
+            #if USE_TRACING
             activity?.SetTag("command.duration", stopWatch.Elapsed.TotalMicroseconds);
             activity?.SetTag("command.name", command.ToString());
             activity?.SetTag("command.data.length", dataLength);
+            #endif
         }
     }
 

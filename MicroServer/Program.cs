@@ -5,6 +5,8 @@ using MicroServer.Model;
 using Serilog;
 using Serilog.Sinks.OpenTelemetry;
 
+Console.WriteLine(args.Aggregate("", (c,n) => c + n + Environment.NewLine));
+
 // адрес сервера 
 var address = args.FirstOrDefault(x => x.StartsWith("--address"))?.Split('=')[1] ?? "127.0.0.1";
 // порт, на котором слушает сервер
@@ -13,7 +15,7 @@ var port = int.Parse(args.FirstOrDefault(x => x.StartsWith("--port"))?.Split('='
 var storageClientsCount = int.Parse(args.FirstOrDefault(x => x.StartsWith("--storage-clients"))?.Split('=')[1] ?? "5");
 
 // максимальное количество одновременных подключений
-var maxConcurrentConnections = int.Parse(args.FirstOrDefault(x => x.StartsWith("--mcc"))?.Split('=')[1] ?? "5");
+var maxConcurrentConnections = int.Parse(args.FirstOrDefault(x => x.StartsWith("--mcc"))?.Split('=')[1] ?? "30");
 // максимальное количество одновременных подключений
 var maxCommandSize = int.Parse(args.FirstOrDefault(x => x.StartsWith("--mcs"))?.Split('=')[1] ?? "4096");
 
@@ -54,6 +56,8 @@ Log.Information(" - address: [{address}]", address);
 Log.Information(" - port: [{port}]", port);
 Log.Information(" - mcc: [{mcc}]", maxConcurrentConnections);
 Log.Information(" - mcs: [{mcs}]", maxCommandSize);
+Log.Information(" - use telemetry: [{useOtel}]", useOtel);
+Log.Information(" - otel server: [{otelServer}]", otelServer);
 
 var tokenSource = new CancellationTokenSource();
 
@@ -88,14 +92,14 @@ try
         try
         {
             listener.Cleanup();
-            if (!useOtel)
-            {
+            //if (!useOtel)
+            //{ 
                 Console.Clear();
                 Console.SetCursorPosition(0, 0);
-                Console.WriteLine(FormatStatus(listener, address, port, storageClients, storage));
-            }
+                Console.WriteLine(FormatStatus(listener, address, port, storageClients, maxConcurrentConnections, storage));
+            //}
 
-            await Task.Delay(2000, tokenSource.Token);
+            await Task.Delay(5000, tokenSource.Token);
         }
         catch (OperationCanceledException)
         {
@@ -133,7 +137,7 @@ return 0;
 // форматирование текущего состояния сервера в строку
 static string FormatStatus(
     TcpServer tcpServer, string address, int port,
-    List<StorageClient> storageClients,
+    List<StorageClient> storageClients, int mcc,
     SimpleStore storage)
 {
     var result = new StringBuilder();
@@ -144,7 +148,7 @@ static string FormatStatus(
     // вывод статистики соединений
     result.AppendLine($"Listening at [{address}:{port}]".PadRight(80));
     result.AppendLine($"Got commands: {ClientSocketHandler.CommandsReceived}".PadRight(80));
-    result.AppendLine($"Actual handlers: [{connections.Count}]".PadRight(80));
+    result.AppendLine($"Actual handlers: [{connections.Count}/{mcc}]".PadRight(80));
     result.AppendLine($"Storage clients: [{storageClients.Count}]".PadRight(80));
     foreach (var client in storageClients)
     {

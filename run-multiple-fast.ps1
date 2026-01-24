@@ -2,9 +2,9 @@
 . (".\_Start-Apps.ps1")
 
 $port = 40567
-$timeout = 30
+$timeout = 3
 $address = "127.0.0.1"
-$clientsToRun = 5
+$clientsToRun = 10
 $verbose = ""
 
 $startServer = $true

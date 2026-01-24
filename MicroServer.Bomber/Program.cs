@@ -4,5 +4,5 @@ Console.WriteLine("<<< Start bomb it! >>>");
 
 Bomber.Run();
 
-Console.WriteLine("<<< Bombing finished! Press any key to exit... >>>");
-Console.ReadKey();
+Console.WriteLine("<<< Bombing finished! >>>");
+//Console.ReadKey();
