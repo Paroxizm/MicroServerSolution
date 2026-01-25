@@ -5,7 +5,7 @@
                 "ScenarioName": "microserver_client_pool",
                 "WarmUpDuration": "00:00:05",
                 "LoadSimulationsSettings": [
-                    { "Inject": [100, "00:00:02", "00:00:10"] }
+                    { "Inject": [1000, "00:00:02", "00:00:10"] }
                 ]
             }            
         ],

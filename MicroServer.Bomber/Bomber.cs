@@ -1,4 +1,5 @@
 ﻿using Microsoft.Extensions.Configuration;
+using NBomber;
 using NBomber.CSharp;
 using Task = System.Threading.Tasks.Task;
 
@@ -20,7 +21,7 @@ public static class Bomber
     {
         Thread.Sleep(3000);
 
-        //var clientPool = new ClientPool<ClientInstance>();
+        var clientPool = new ClientPool<ClientInstance>();
 
         CustomScenarioSettings? settings = null;
 
@@ -31,37 +32,42 @@ public static class Bomber
                     if (settings == null)
                         return Response.Fail();
 
-                    var client = new ClientInstance(settings.Address, settings.Port);
+                    var client =  clientPool.GetClient(ctx.ScenarioInfo.InstanceNumber);
 
-                    await client.ConnectAsync();
+                    //await client.ConnectAsync();
                     var result = await client.RunDataCommand(ctx.ScenarioCancellationToken);
-                    client.Close();
+                    //client.Close();
 
                     return !result ? Response.Fail() : Response.Ok();
                 })
-                .WithInit(ctx =>
+                .WithInit(async ctx =>
                 {
                     settings = ctx.GlobalCustomSettings.Get<CustomScenarioSettings>();
                     if (settings == null)
                         throw new Exception("Failed to get global settings! Initialization failed.");
 
-                    return Task.CompletedTask;
+                    for (var i = 0; i < settings.ClientCount; i++)
+                    {
+                        var clientItem = new ClientInstance(settings.Address, settings.Port);
+                        await clientItem.ConnectAsync();
+                        await Task.Delay(10);
+
+                        clientPool.AddClient(clientItem);
+                    }
+                    
+                    //return Task.CompletedTask;
 
                 })
             //прогрев и симуляция настроены в scenario-config.json
             //.WithLoadSimulations(
             //    Simulation.KeepConstant(copies: 10, during: TimeSpan.FromSeconds(30))
             //)
-            // .WithClean(ctx =>
-            // {
-            //     Console.WriteLine($"Remove client: {ctx.ScenarioInfo.InstanceNumber}");
-            //     
-            //     var client = clientPool.GetClient(ctx.ScenarioInfo.InstanceNumber);
-            //     client.Close();
-            //     
-            //     //clientPool.DisposeClients(client => client.Close());
-            //     return Task.CompletedTask;
-            // })
+            .WithClean(ctx =>
+            {
+                var client = clientPool.GetClient(ctx.ScenarioInfo.InstanceNumber);
+                client.Close();
+                return Task.CompletedTask;
+            })
             ;
 
         NBomberRunner
