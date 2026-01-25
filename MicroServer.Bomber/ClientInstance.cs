@@ -26,7 +26,7 @@ public class ClientInstance
         return _socket.ConnectAsync([_address], _port);
     }
 
-    public async Task<bool> RunDataCommand()
+    public async Task<bool> RunDataCommand(CancellationToken cancellationToken)
     {
         byte[]? commandBuffer = null;
         try
@@ -35,21 +35,23 @@ public class ClientInstance
 
             var commandLen = CreateCommand(commandBuffer, Random.Shared.Next(100, 5000));
 
-            var sentLen = await _socket.SendAsync(commandBuffer.AsMemory(0, commandLen));
+            var sentLen = await _socket.SendAsync(commandBuffer.AsMemory(0, commandLen),
+                cancellationToken: cancellationToken);
 
             if (sentLen != commandLen)
                 return false;
 
-            var received = await _socket.ReceiveAsync(commandBuffer.AsMemory(0));
+            var received = await _socket.ReceiveAsync(commandBuffer.AsMemory(0), cancellationToken: cancellationToken);
 
             if (received == 0)
                 return false;
 
-            var receivedData = Encoding.UTF8.GetString(commandBuffer, 0, received);
-
-            var result = receivedData.Length > 0 && receivedData[0] != '-';
-            
-            return result;
+            return received > 0;
+        }
+        catch (OperationCanceledException)
+        {
+            // сами остановили
+            return true;
         }
         catch (Exception ex)
         {
@@ -112,12 +114,12 @@ public class ClientInstance
         public DateTime CreatedAt { get; set; }
     }
     
-    private static byte[] CreateSetCommand(int minLength, int maxLength, int p, int ttl)
+    private static byte[] CreateSetCommand(int minId, int maxId, int p, int ttl)
     {
         var profile = new UserProfileDto
         {
             CreatedAt = DateTime.UtcNow,
-            Id = Random.Shared.Next(minLength, maxLength),
+            Id = Random.Shared.Next(minId, maxId),
             UserName = "BOMBER USER"
         };
         

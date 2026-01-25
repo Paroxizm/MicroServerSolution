@@ -1,6 +1,6 @@
 ﻿using Microsoft.Extensions.Configuration;
-using NBomber;
 using NBomber.CSharp;
+using Task = System.Threading.Tasks.Task;
 
 namespace MicroServer.Bomber;
 
@@ -20,36 +20,49 @@ public static class Bomber
     {
         Thread.Sleep(3000);
 
-        var clientPool = new ClientPool<ClientInstance>();
+        //var clientPool = new ClientPool<ClientInstance>();
+
+        CustomScenarioSettings? settings = null;
+
 
         var scenario = Scenario.Create("microserver_client_pool", async ctx =>
-            {
-                var client = clientPool.GetClient(ctx.ScenarioInfo.InstanceNumber);
-
-                var result = await client.RunDataCommand();
-                return !result ? Response.Fail() : Response.Ok();
-            })
-            .WithInit(async ctx =>
-            {
-                var config = ctx.GlobalCustomSettings.Get<CustomScenarioSettings>();
-                if (config == null)
-                    throw new Exception("Failed to get global settings! Initialization failed.");
-
-                for (var i = 0; i < config.ClientCount; i++)
                 {
-                    var clientItem = new ClientInstance(config.Address, config.Port);
-                    await clientItem.ConnectAsync();
-                    await Task.Delay(10);
 
-                    clientPool.AddClient(clientItem);
-                }
-            })
+                    if (settings == null)
+                        return Response.Fail();
+
+                    var client = new ClientInstance(settings.Address, settings.Port);
+
+                    await client.ConnectAsync();
+                    var result = await client.RunDataCommand(ctx.ScenarioCancellationToken);
+                    client.Close();
+
+                    return !result ? Response.Fail() : Response.Ok();
+                })
+                .WithInit(ctx =>
+                {
+                    settings = ctx.GlobalCustomSettings.Get<CustomScenarioSettings>();
+                    if (settings == null)
+                        throw new Exception("Failed to get global settings! Initialization failed.");
+
+                    return Task.CompletedTask;
+
+                })
             //прогрев и симуляция настроены в scenario-config.json
-            .WithClean(_ =>
-            {
-                clientPool.DisposeClients(client => client.Close());
-                return Task.CompletedTask;
-            });
+            //.WithLoadSimulations(
+            //    Simulation.KeepConstant(copies: 10, during: TimeSpan.FromSeconds(30))
+            //)
+            // .WithClean(ctx =>
+            // {
+            //     Console.WriteLine($"Remove client: {ctx.ScenarioInfo.InstanceNumber}");
+            //     
+            //     var client = clientPool.GetClient(ctx.ScenarioInfo.InstanceNumber);
+            //     client.Close();
+            //     
+            //     //clientPool.DisposeClients(client => client.Close());
+            //     return Task.CompletedTask;
+            // })
+            ;
 
         NBomberRunner
             .RegisterScenarios(scenario)

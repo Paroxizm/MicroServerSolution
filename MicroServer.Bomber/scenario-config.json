@@ -5,7 +5,7 @@
                 "ScenarioName": "microserver_client_pool",
                 "WarmUpDuration": "00:00:05",
                 "LoadSimulationsSettings": [
-                    { "Inject": [100, "00:00:05", "00:01:00"] }
+                    { "Inject": [100, "00:00:02", "00:00:10"] }
                 ]
             }            
         ],
@@ -13,7 +13,7 @@
         "GlobalCustomSettings": {
             "Address": "127.0.0.1",
             "Port": 40567,
-            "ClientCount": 10
+            "ClientCount": 1
         }
     }   
     

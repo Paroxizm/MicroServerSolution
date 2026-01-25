@@ -12,7 +12,7 @@ function Start-Apps
 
     if ($startServer)
     {
-        Start-Process -FilePath .\MicroServer\bin\Debug\net9.0\MicroServer.exe -ArgumentList "--address=$address","--port=$port"
+        Start-Process -FilePath .\MicroServer\bin\Debug\net9.0\MicroServer.exe -ArgumentList "--address=$address","--port=$port","--otel=http://localhost:4317","--mcc=100"
     }
 
     if ($startClients)

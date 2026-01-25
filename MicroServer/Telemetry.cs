@@ -12,7 +12,7 @@ public static class Telemetry
     private static readonly ActivitySource Source = new("MicroServer");
     private static readonly Meter Meter = new("MicroServer.Metrics", "1.0.0");
 
-    private static readonly Counter<long> CommandsProcessedCounter = 
+    private static readonly Counter<long> CommandsProcessedCounter =
         Meter.CreateCounter<long>("commands.processed", "commands", "Number of processed commands");
 
     private static readonly Counter<long> AcceptedClientsCounter =
@@ -23,7 +23,18 @@ public static class Telemetry
         unit: "connections",
         description: "Number of active connections");
 
-    private static readonly Histogram<double> DurationHistogram = Meter.CreateHistogram<double>("duration", "mcs", "Command duration in microseconds");
+    private static readonly Histogram<double> DurationHistogram =
+        Meter.CreateHistogram<double>("duration", "mcs", "Command duration in microseconds");
+
+    private static readonly Histogram<double> RpsHistogram =
+        Meter.CreateHistogram<double>("rps", "rps", "Requests per second");
+
+    private static readonly ObservableGauge<double>? _rpsValueGauge = Meter.CreateObservableGauge(
+        name: "rps.gauge",
+        observeValue: () => _currentRps,
+        description: "Текущее значение RPS",
+        unit: "rps"
+    );
 
     private static TracerProvider? _tracerProvider;
     private static MeterProvider? _meterProvider;
@@ -31,14 +42,14 @@ public static class Telemetry
     public static void Start(string serverUrl, string serviceName)
     {
         var resourceBuilder = ResourceBuilder.CreateDefault()
-                .AddService(
-                    serviceName: serviceName,
-                    serviceVersion: "1.0.0",
-                    serviceInstanceId: "core");
+            .AddService(
+                serviceName: serviceName,
+                serviceVersion: "1.0.0",
+                serviceInstanceId: "core");
         _tracerProvider = Sdk.CreateTracerProviderBuilder()
             .AddSource("MicroServer")
             .SetResourceBuilder(resourceBuilder)
-            .AddConsoleExporter()
+            //.AddConsoleExporter()
             .AddOtlpExporter(options => { options.Endpoint = new Uri(serverUrl); })
             .Build();
 
@@ -46,7 +57,7 @@ public static class Telemetry
         _meterProvider = Sdk.CreateMeterProviderBuilder()
             .SetResourceBuilder(resourceBuilder)
             .AddMeter("MicroServer.Metrics")
-            .AddConsoleExporter()
+            //.AddConsoleExporter()
             .AddOtlpExporter(otlp => { otlp.Endpoint = new Uri(serverUrl); })
             .Build();
     }
@@ -62,9 +73,29 @@ public static class Telemetry
         return Source.StartActivity(activityName);
     }
 
+    private static DateTime _startedAt = DateTime.MinValue;
+    private static long _totalCommands;
+    private static double _currentRps;
+
     public static void CommandProcessed()
     {
         CommandsProcessedCounter.Add(1);
+
+        _totalCommands++;
+
+        if (_startedAt == DateTime.MinValue)
+            _startedAt = DateTime.Now;
+        else
+        {
+            var elapsed = (DateTime.Now - _startedAt).TotalMicroseconds;
+            if (!(elapsed > 0))
+                return;
+
+            var rps = _totalCommands / elapsed * 1_000_000;
+            _currentRps = rps;
+
+            RpsHistogram.Record(rps);
+        }
     }
 
     public static void ClientsAccepted()
@@ -90,7 +121,7 @@ public static class Telemetry
         Interlocked.Decrement(ref _currentConnections);
         ActiveConnectionsCounter.Record(_currentConnections);
     }
-    
+
     public static void ClientDisconnectedByServer()
     {
         //Interlocked.Decrement(ref _currentConnections);
