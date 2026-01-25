@@ -4,7 +4,7 @@
 $port = 40567
 $timeout = 3
 $address = "127.0.0.1"
-$clientsToRun = 10
+$clientsToRun = 30
 $verbose = ""
 
 $startServer = $true
